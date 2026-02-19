@@ -1,3 +1,9 @@
+databases:
+  - name: el-dorado-sb-outreach-agent-db
+    plan: starter
+    databaseName: el_dorado_sb_outreach
+    user: el_dorado
+
 services:
   - type: web
     name: el-dorado-sb-outreach-agent-web
@@ -14,7 +20,9 @@ services:
       - key: SESSION_SECRET
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: el-dorado-sb-outreach-agent-db
+          property: connectionString
 
   - type: cron
     name: el-dorado-sb-outreach-agent-worker
@@ -28,7 +36,9 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: el-dorado-sb-outreach-agent-db
+          property: connectionString
       - key: X_BEARER_TOKEN
         sync: false
       - key: OPENAI_API_KEY
@@ -39,4 +49,3 @@ services:
         value: gpt-5.2
       - key: MODEL_WRITE
         value: gpt-5.2
-

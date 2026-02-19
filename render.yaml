@@ -1,6 +1,5 @@
 databases:
   - name: el-dorado-sb-outreach-agent-db
-    plan: basic-256mb
     databaseName: el_dorado_sb_outreach
     user: el_dorado
 

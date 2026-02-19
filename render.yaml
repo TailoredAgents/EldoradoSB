@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: el-dorado-sb-outreach-agent-web
+    env: node
+    rootDir: .
+    buildCommand: npm install && npm run db:generate && npm run build:web
+    startCommand: npm run start:web
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: APP_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: el-dorado-sb-outreach-agent-worker
+    env: node
+    rootDir: .
+    schedule: "0 * * * *"
+    buildCommand: npm install && npm run db:generate
+    startCommand: npm run run:worker
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        sync: false
+      - key: X_BEARER_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MODEL_EXTRACT
+        value: gpt-5-mini
+      - key: MODEL_RANK
+        value: gpt-5.2
+      - key: MODEL_WRITE
+        value: gpt-5.2
+

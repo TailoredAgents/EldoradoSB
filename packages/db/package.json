@@ -1,0 +1,14 @@
+{
+  "name": "@el-dorado/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.15.0"
+  }
+}
+

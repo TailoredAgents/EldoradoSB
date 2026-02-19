@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProspectStatus {
+  new
+  queued
+  contacted
+  replied
+  negotiating
+  signed
+  rejected
+  dnc
+  done
+}
+
+enum OutreachChannel {
+  dm
+  email
+}
+
+enum WorkerRunStatus {
+  started
+  skipped_disabled
+  skipped_budget
+  success
+  error
+}
+
+model Prospect {
+  id        String         @id @default(cuid())
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  xUserId   String         @unique
+  handle    String
+  name      String?
+
+  bio       String?
+  url       String?
+  location  String?
+
+  followers Int?
+  verified  Boolean?
+
+  status    ProspectStatus @default(new)
+  owner     String?
+
+  usFocusConfidence Float?
+
+  performanceScore Float?
+  acceptanceScore  Float?
+  overallScore     Float?
+  tier             String?
+  primarySport     String?
+
+  queuedAt  DateTime?
+  queuedDay DateTime?
+
+  dmDraft        String?
+  emailSubject   String?
+  emailBody      String?
+  draftedAt      DateTime?
+
+  lastSampledAt  DateTime?
+  lastAnalyzedAt DateTime?
+
+  firstDiscoveredAt      DateTime?
+  firstDiscoveredQueryId String?
+
+  rationale Json?
+  notes     String?
+
+  postSamples    PostSample[]
+  scoreHistory   ScoreHistory[]
+  outreachEvents OutreachEvent[]
+
+  @@index([status])
+  @@index([tier])
+  @@index([owner])
+  @@index([followers])
+  @@index([overallScore])
+  @@index([queuedDay])
+  @@index([primarySport])
+}
+
+model PostSample {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  postId    String   @unique
+  postedAt  DateTime?
+  text      String
+  permalink String?
+
+  likes     Int?
+  replies   Int?
+  reposts   Int?
+  quotes    Int?
+
+  sampledAt DateTime @default(now())
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+
+  @@index([prospectId])
+  @@index([sampledAt])
+}
+
+model ScoreHistory {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  computedAt DateTime @default(now())
+
+  inputsHash String
+  features   Json?
+
+  performanceScore Float?
+  acceptanceScore  Float?
+  overallScore     Float?
+  tier             String?
+  rationale        Json?
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+
+  @@unique([prospectId, inputsHash])
+  @@index([computedAt])
+  @@index([tier])
+}
+
+model OutreachEvent {
+  id        String          @id @default(cuid())
+  createdAt DateTime        @default(now())
+  eventAt   DateTime        @default(now())
+
+  channel   OutreachChannel
+  eventType String
+
+  templateUsed String?
+  outcome      String?
+  followUpAt   DateTime?
+  notes        String?
+
+  depositors   Int?
+  depositsUsd  Float?
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+
+  @@index([prospectId])
+  @@index([eventAt])
+  @@index([channel])
+}
+
+model Settings {
+  id        Int      @id @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enabled Boolean @default(true)
+
+  maxPostReadsPerRun Int @default(25)
+  maxPostReadsPerDay Int @default(400)
+
+  queueValueCount      Int @default(12)
+  queueAcceptanceCount Int @default(6)
+  queueExplorationCount Int @default(2)
+
+  disclaimerText String?
+  templates      Json?
+}
+
+model UsageLedger {
+  date DateTime @id
+
+  xPostReads   Int @default(0)
+  xUserLookups Int @default(0)
+
+  llmTokensByModel Json?
+  estimatedCostUsd Float?
+}
+
+model WorkerRun {
+  id        String          @id @default(cuid())
+  createdAt DateTime        @default(now())
+  startedAt DateTime        @default(now())
+  finishedAt DateTime?
+
+  status    WorkerRunStatus @default(started)
+  dryRun    Boolean         @default(false)
+
+  xPostReadsDelta   Int @default(0)
+  xUserLookupsDelta Int @default(0)
+
+  stats        Json?
+  errorMessage String?
+
+  @@index([startedAt])
+  @@index([status])
+}

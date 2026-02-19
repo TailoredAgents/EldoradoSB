@@ -1,0 +1,35 @@
+{
+  "name": "el-dorado-sb-outreach-agent",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm -w @el-dorado/web run dev",
+    "build:web": "npm -w @el-dorado/web run build",
+    "start:web": "npm -w @el-dorado/web run start",
+    "lint:web": "npm -w @el-dorado/web run lint",
+    "dev:worker": "npm -w @el-dorado/worker run dev",
+    "run:worker": "npm -w @el-dorado/worker run start",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:studio": "prisma studio",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^6.15.0",
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.15.0"
+  }
+}

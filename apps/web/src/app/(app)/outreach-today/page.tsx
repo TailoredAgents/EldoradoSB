@@ -37,6 +37,53 @@ export default async function OutreachTodayPage() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+        <div className="md:hidden">
+          {todayProspects.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-white/60">
+              No queued prospects yet. Queue some from the New tab.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {todayProspects.map((p) => (
+                <div key={p.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Link href={`/prospects/${p.id}`} className="text-base font-medium">
+                        @{p.handle}
+                      </Link>
+                      {p.name ? (
+                        <div className="text-xs text-white/60">{p.name}</div>
+                      ) : null}
+                    </div>
+                    <span className="rounded-md bg-amber-400/10 px-2 py-1 text-xs text-amber-200">
+                      {p.tier ?? "—"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-white/70">
+                    <div>
+                      <div className="text-white/50">Overall</div>
+                      <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                        {p.overallScore?.toFixed(0) ?? "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-white/50">Followers</div>
+                      <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                        {p.followers?.toLocaleString() ?? "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-white/50">Owner</div>
+                      <div className="mt-0.5 font-medium text-white/90">{p.owner ?? "—"}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden md:block">
         <table className="w-full text-sm">
           <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
             <tr>
@@ -82,12 +129,32 @@ export default async function OutreachTodayPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {backlogProspects.length ? (
         <div className="space-y-2">
           <div className="text-sm text-white/70">Queued backlog</div>
           <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+            <div className="md:hidden divide-y divide-white/10">
+              {backlogProspects.map((p) => (
+                <div key={p.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <Link href={`/prospects/${p.id}`} className="font-medium">
+                      @{p.handle}
+                    </Link>
+                    <div className="text-xs text-white/70 tabular-nums">
+                      {p.overallScore?.toFixed(0) ?? "—"}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-white/60">
+                    queued: {p.queuedAt ? new Date(p.queuedAt).toISOString().slice(0, 10) : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden md:block">
             <table className="w-full text-sm">
               <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
                 <tr>
@@ -114,6 +181,7 @@ export default async function OutreachTodayPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       ) : null}

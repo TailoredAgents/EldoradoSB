@@ -160,6 +160,50 @@ export default async function ReportsPage() {
           </div>
 
           <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+            <div className="md:hidden">
+              {queryStats.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-white/60">
+                  No discovery attribution yet.
+                </div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {queryStats.map((q) => (
+                    <div key={q.queryId} className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="font-mono text-xs text-white/80">
+                          {q.queryId}
+                        </div>
+                        <div className="text-xs tabular-nums text-amber-200">
+                          {(q.yieldScore * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-white/70">
+                        <div>
+                          <div className="text-white/50">Discovered</div>
+                          <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                            {q.discovered}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-white/50">Queued</div>
+                          <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                            {q.queuedEver}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-white/50">Signed</div>
+                          <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                            {q.signed}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden md:block">
             <table className="w-full text-sm">
               <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
                 <tr>
@@ -200,6 +244,7 @@ export default async function ReportsPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
@@ -208,6 +253,26 @@ export default async function ReportsPage() {
             Primary sport mix
           </div>
           <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+            <div className="md:hidden">
+              {topSports.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-white/60">
+                  No analyzed sports yet.
+                </div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {topSports.map((s) => (
+                    <div key={s.primarySport ?? "unknown"} className="flex items-center justify-between gap-3 p-4">
+                      <div className="text-sm">{s.primarySport}</div>
+                      <div className="text-sm font-medium tabular-nums text-white/90">
+                        {s._count.id}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden md:block">
             <table className="w-full text-sm">
               <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
                 <tr>
@@ -232,6 +297,7 @@ export default async function ReportsPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

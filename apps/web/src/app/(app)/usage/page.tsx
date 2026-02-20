@@ -23,6 +23,42 @@ export default async function UsagePage() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+        <div className="md:hidden">
+          {rows.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-white/60">No usage recorded yet.</div>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {rows.map((r) => (
+                <div key={r.date.toISOString()} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-medium">
+                      {r.date.toISOString().slice(0, 10)}
+                    </div>
+                    <div className="text-xs text-white/60 tabular-nums">
+                      {r.estimatedCostUsd?.toFixed(2) ?? "—"}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/70">
+                    <div>
+                      <div className="text-white/50">X post reads</div>
+                      <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                        {r.xPostReads.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-white/50">X user lookups</div>
+                      <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                        {r.xUserLookups.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden md:block">
         <table className="w-full text-sm">
           <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
             <tr>
@@ -59,11 +95,54 @@ export default async function UsagePage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/30 p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Recent worker runs</div>
         <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+          <div className="md:hidden">
+            {runs.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-white/60">No worker runs recorded yet.</div>
+            ) : (
+              <div className="divide-y divide-white/10">
+                {runs.map((r) => (
+                  <div key={r.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-sm font-medium text-white/90">
+                        {new Date(r.startedAt).toISOString().slice(0, 19).replace("T", " ")}Z
+                      </div>
+                      <span className="rounded-md bg-white/5 px-2 py-1 text-xs text-white/70">
+                        {r.status}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-white/70">
+                      <div>
+                        <div className="text-white/50">Δ posts</div>
+                        <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                          {r.xPostReadsDelta}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-white/50">Δ users</div>
+                        <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                          {r.xUserLookupsDelta}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-white/50">Dry</div>
+                        <div className="mt-0.5 font-medium text-white/90">
+                          {r.dryRun ? "yes" : "no"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
           <table className="w-full text-sm">
             <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
               <tr>
@@ -100,9 +179,9 @@ export default async function UsagePage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

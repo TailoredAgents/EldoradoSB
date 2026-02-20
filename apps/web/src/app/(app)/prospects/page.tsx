@@ -83,6 +83,77 @@ export default async function ProspectsPage({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+        <div className="md:hidden">
+          {prospects.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-white/60">
+              No prospects in this bucket yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {prospects.map((p) => (
+                <div key={p.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Link href={`/prospects/${p.id}`} className="text-base font-medium">
+                        @{p.handle}
+                      </Link>
+                      {p.name ? (
+                        <div className="text-xs text-white/60">{p.name}</div>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-md bg-white/5 px-2 py-1 text-white/70">
+                          {p.status}
+                        </span>
+                        {p.tier ? (
+                          <span className="rounded-md bg-amber-400/10 px-2 py-1 text-amber-200">
+                            {p.tier}
+                          </span>
+                        ) : null}
+                        {p.owner ? (
+                          <span className="rounded-md bg-white/5 px-2 py-1 text-white/70">
+                            owner: {p.owner}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-white/50">Overall</div>
+                      <div className="mt-0.5 text-lg font-semibold tabular-nums text-amber-200">
+                        {p.overallScore?.toFixed(0) ?? "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/70">
+                    <div>
+                      <div className="text-white/50">Followers</div>
+                      <div className="mt-0.5 font-medium tabular-nums text-white/90">
+                        {p.followers?.toLocaleString() ?? "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-white/50">Updated</div>
+                      <div className="mt-0.5 font-medium text-white/90">
+                        {new Date(p.updatedAt).toISOString().slice(0, 10)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <Link
+                      href={`/prospects/${p.id}`}
+                      className="inline-flex rounded-md bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+                    >
+                      Open →
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden md:block">
         <table className="w-full text-sm">
           <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
             <tr>
@@ -161,6 +232,7 @@ export default async function ProspectsPage({
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -25,9 +25,14 @@ import { ProspectStatus } from "@el-dorado/db";
 import { buildDailyQueue } from "./queue/policy";
 import { startOfDayApp } from "./time";
 import { runWriter } from "./openai/writer";
+import { ensureAccessToken } from "./x/credentials";
+import { postTweet } from "./x/write";
+import { XActionStatus, XActionType } from "@el-dorado/db";
 
 export type RunOptions = {
   dryRun: boolean;
+  xTestPost?: boolean;
+  xTestText?: string | null;
 };
 
 const ACTIVE_STATUSES: ProspectStatus[] = [
@@ -60,6 +65,48 @@ export async function runOnce(options: RunOptions) {
         },
       });
       return { status: "skipped_disabled" as const, runId: run.id };
+    }
+
+    // Manual test: post a tweet using OAuth credentials (safe: only when flag is provided).
+    if (options.xTestPost) {
+      if (options.dryRun) {
+        await prisma.workerRun.update({
+          where: { id: run.id },
+          data: {
+            status: WorkerRunStatus.success,
+            finishedAt: new Date(),
+            stats: { phase: "x_test_post", dryRun: true },
+          },
+        });
+        return { status: "success" as const, runId: run.id };
+      }
+
+      const text =
+        (options.xTestText && String(options.xTestText).trim()) ||
+        `Eldorado agent test post (${new Date().toISOString()})`;
+
+      const accessToken = await ensureAccessToken();
+      const posted = await postTweet({ accessToken, text });
+
+      await prisma.xActionLog.create({
+        data: {
+          actionType: XActionType.post,
+          status: XActionStatus.success,
+          reason: "x_test_post",
+          xId: posted.id ?? null,
+          meta: { text, response: posted },
+        },
+      });
+
+      await prisma.workerRun.update({
+        where: { id: run.id },
+        data: {
+          status: WorkerRunStatus.success,
+          finishedAt: new Date(),
+          stats: { phase: "x_test_post", xId: posted.id ?? null },
+        },
+      });
+      return { status: "success" as const, runId: run.id };
     }
 
     const today = await getTodayUsage();

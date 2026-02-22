@@ -8,6 +8,7 @@ const NAV = [
   { href: "/prospects?bucket=done", label: "Done" },
   { href: "/reports", label: "Reports" },
   { href: "/campaigns", label: "Campaigns" },
+  { href: "/x", label: "Eldorado X" },
   { href: "/templates", label: "Templates" },
   { href: "/usage", label: "Usage" },
   { href: "/settings", label: "Settings" },

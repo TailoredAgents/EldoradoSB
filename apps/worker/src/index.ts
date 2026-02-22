@@ -6,9 +6,22 @@ function hasFlag(flag: string): boolean {
   return process.argv.includes(flag);
 }
 
+function getFlagValue(name: string): string | null {
+  const prefix = `${name}=`;
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  if (!hit) return null;
+  return hit.slice(prefix.length);
+}
+
 async function main() {
   const dryRun = hasFlag("--dry-run");
-  const result = await runOnce({ dryRun });
+  const xTestPost = hasFlag("--x-test-post");
+  const xTestText = getFlagValue("--x-test-text");
+  const result = await runOnce({
+    dryRun,
+    xTestPost,
+    xTestText,
+  });
   console.log("[worker] run complete:", result);
 }
 

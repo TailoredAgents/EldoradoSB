@@ -38,6 +38,22 @@ enum CampaignType {
   mixed
 }
 
+enum XActionType {
+  post
+  reply
+  dm
+  outbound_comment
+  inbound_scan
+  oauth_connect
+  oauth_refresh
+}
+
+enum XActionStatus {
+  success
+  skipped
+  error
+}
+
 model Prospect {
   id        String         @id @default(cuid())
   createdAt DateTime       @default(now())
@@ -253,4 +269,53 @@ model ClickEvent {
 
   @@index([trackingLinkId])
   @@index([createdAt])
+}
+
+model XCredential {
+  id        Int      @id @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accessTokenEnc  String
+  refreshTokenEnc String?
+  tokenType       String?
+  scope           String?
+  expiresAt       DateTime?
+}
+
+model XAccountSettings {
+  id        Int      @id @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enabled          Boolean @default(false)
+  autoPostEnabled  Boolean @default(false)
+  autoReplyEnabled Boolean @default(false)
+  outboundEnabled  Boolean @default(false)
+
+  maxPostsPerDay          Int @default(3)
+  maxAutoRepliesPerDay    Int @default(60)
+  maxOutboundRepliesPerDay Int @default(10)
+
+  // Schedule stored as JSON for flexibility. Example: { "posts": ["11:00", "16:00", "21:30"] }
+  schedule Json?
+
+  disclaimerText String?
+}
+
+model XActionLog {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+
+  actionType XActionType
+  status     XActionStatus @default(success)
+
+  reason String?
+  meta   Json?
+
+  xId String?
+
+  @@index([createdAt])
+  @@index([actionType])
+  @@index([status])
 }

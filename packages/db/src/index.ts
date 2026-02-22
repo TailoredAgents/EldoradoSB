@@ -4,6 +4,8 @@ export {
   OutreachChannel,
   WorkerRunStatus,
   CampaignType,
+  XActionType,
+  XActionStatus,
   Prisma,
 } from "@prisma/client";
 export type {
@@ -17,4 +19,7 @@ export type {
   Campaign,
   TrackingLink,
   ClickEvent,
+  XCredential,
+  XAccountSettings,
+  XActionLog,
 } from "@prisma/client";

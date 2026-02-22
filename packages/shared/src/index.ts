@@ -1,2 +1,2 @@
-export const SHARED_PACKAGE_PLACEHOLDER = true;
+export * from "./tokenCrypto";
 

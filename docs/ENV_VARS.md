@@ -4,6 +4,7 @@
 
 - `APP_PASSWORD` (required): password gate for the site.
 - `SESSION_SECRET` (optional): if omitted, `APP_PASSWORD` is used for signing sessions.
+- `APP_TIME_ZONE` (optional): timezone for "today" boundaries (queue + usage). Default `America/New_York`.
 - `DATABASE_URL` (required): Postgres connection string.
 
 ## Worker

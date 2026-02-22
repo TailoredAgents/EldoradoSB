@@ -23,7 +23,7 @@ import {
 } from "./openai/analyzer";
 import { ProspectStatus } from "@el-dorado/db";
 import { buildDailyQueue } from "./queue/policy";
-import { startOfDayUtc } from "./time";
+import { startOfDayApp } from "./time";
 import { runWriter } from "./openai/writer";
 
 export type RunOptions = {
@@ -355,7 +355,7 @@ export async function runOnce(options: RunOptions) {
       }
 
       // Queue selection (Phase 6): deterministic daily queue using stored scores.
-      const queueDay = startOfDayUtc(new Date());
+      const queueDay = startOfDayApp(new Date());
       const alreadyQueuedToday = await prisma.prospect.count({
         where: { status: ProspectStatus.queued, queuedDay: queueDay },
       });

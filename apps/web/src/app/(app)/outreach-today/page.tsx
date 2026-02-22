@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { prisma } from "@el-dorado/db";
 import { ProspectStatus } from "@el-dorado/db";
-import { startOfDayUtc } from "@/lib/time";
+import { startOfDayApp } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 export default async function OutreachTodayPage() {
-  const today = startOfDayUtc(new Date());
+  const today = startOfDayApp(new Date());
   const todayProspects = await prisma.prospect.findMany({
     where: { status: ProspectStatus.queued, queuedDay: today },
     orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],

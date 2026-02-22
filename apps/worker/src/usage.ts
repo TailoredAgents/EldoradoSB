@@ -1,8 +1,8 @@
 import { prisma } from "@el-dorado/db";
-import { startOfDayUtc } from "./time";
+import { startOfDayApp } from "./time";
 
 export async function getTodayUsage() {
-  const today = startOfDayUtc(new Date());
+  const today = startOfDayApp(new Date());
   const row = await prisma.usageLedger.findUnique({ where: { date: today } });
   return {
     date: today,
@@ -18,7 +18,7 @@ export async function incrementTodayUsage(delta: {
   estimatedCostUsd?: number;
   llmTokensByModel?: Record<string, number>;
 }) {
-  const today = startOfDayUtc(new Date());
+  const today = startOfDayApp(new Date());
   const existing = await prisma.usageLedger.findUnique({ where: { date: today } });
   const existingTokens =
     (existing?.llmTokensByModel && typeof existing.llmTokensByModel === "object"

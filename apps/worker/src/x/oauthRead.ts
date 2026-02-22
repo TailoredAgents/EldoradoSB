@@ -36,6 +36,7 @@ export async function getMentions(args: {
   userId: string;
   maxResults: number;
   paginationToken?: string;
+  sinceId?: string;
 }) {
   return getJson<XUserMentionsResponse>({
     accessToken: args.accessToken,
@@ -43,10 +44,10 @@ export async function getMentions(args: {
     params: {
       max_results: Math.min(Math.max(args.maxResults, 5), 100),
       pagination_token: args.paginationToken,
+      since_id: args.sinceId,
       "tweet.fields": ["author_id", "created_at", "lang"].join(","),
       expansions: "author_id",
       "user.fields": ["username", "name"].join(","),
     },
   });
 }
-

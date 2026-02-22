@@ -1,7 +1,8 @@
-import { prisma, XActionStatus, XActionType } from "@el-dorado/db";
+import { prisma, XActionStatus, XActionType, XHandledItemType } from "@el-dorado/db";
 import { ensureAccessToken } from "./credentials";
 import { postTweet } from "./write";
 import { getAppTimeZone, getSlotInstantForTodayApp, startOfDayApp, startOfNextDayApp } from "../time";
+import { markHandledItemDone, markHandledItemError, reserveHandledItem } from "./handled";
 
 type AutoPostResult =
   | { status: "skipped"; reason: string }
@@ -177,20 +178,57 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
       return { status: "skipped", reason: "dry_run" };
     }
 
-    const accessToken = await ensureAccessToken();
-    const posted = await postTweet({ accessToken, text });
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const externalId = `${ymd}|${slot}`;
 
-    await prisma.xActionLog.create({
-      data: {
-        actionType: XActionType.post,
-        status: XActionStatus.success,
-        reason: `autopost:${slot}`,
-        xId: posted.id ?? null,
-        meta: { slot, tz, text },
-      },
+    const reserved = await reserveHandledItem({
+      type: XHandledItemType.autopost_slot,
+      externalId,
+      retryErroredAfterMs: 60 * 60 * 1000,
     });
+    if (!reserved) return { status: "skipped", reason: "autopost_slot_already_reserved" };
 
-    return { status: "posted", slot, xId: posted.id };
+    try {
+      const accessToken = await ensureAccessToken();
+      const posted = await postTweet({ accessToken, text });
+
+      await prisma.xActionLog.create({
+        data: {
+          actionType: XActionType.post,
+          status: XActionStatus.success,
+          reason: `autopost:${slot}`,
+          xId: posted.id ?? null,
+          meta: { slot, tz, text, externalId },
+        },
+      });
+
+      await markHandledItemDone({ type: XHandledItemType.autopost_slot, externalId });
+      return { status: "posted", slot, xId: posted.id };
+    } catch (err) {
+      try {
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.post,
+            status: XActionStatus.error,
+            reason: `autopost:${slot}:error`,
+            meta: { slot, tz, text, externalId, message: err instanceof Error ? err.message : String(err) },
+          },
+        });
+      } catch {
+        // ignore
+      }
+      try {
+        await markHandledItemError({ type: XHandledItemType.autopost_slot, externalId, error: err });
+      } catch {
+        // ignore
+      }
+      return { status: "skipped", reason: "autopost_post_error" };
+    }
   }
 
   return { status: "skipped", reason: "no_due_slot" };

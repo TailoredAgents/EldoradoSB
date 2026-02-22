@@ -6,6 +6,8 @@ export {
   CampaignType,
   XActionType,
   XActionStatus,
+  XHandledItemType,
+  XHandledItemStatus,
   Prisma,
 } from "@prisma/client";
 export type {
@@ -22,4 +24,6 @@ export type {
   XCredential,
   XAccountSettings,
   XActionLog,
+  XHandledItem,
+  XAccountState,
 } from "@prisma/client";

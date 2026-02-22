@@ -54,6 +54,19 @@ enum XActionStatus {
   error
 }
 
+enum XHandledItemType {
+  mention_tweet
+  dm_event
+  outbound_target_tweet
+  autopost_slot
+}
+
+enum XHandledItemStatus {
+  reserved
+  done
+  error
+}
+
 model Prospect {
   id        String         @id @default(cuid())
   createdAt DateTime       @default(now())
@@ -320,4 +333,30 @@ model XActionLog {
   @@index([createdAt])
   @@index([actionType])
   @@index([status])
+}
+
+model XHandledItem {
+  id        String            @id @default(cuid())
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  type       XHandledItemType
+  externalId String
+  status     XHandledItemStatus @default(reserved)
+
+  lastError String?
+
+  @@unique([type, externalId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model XAccountState {
+  id        Int      @id @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lastMentionId String?
+  lastDmEventId String?
 }

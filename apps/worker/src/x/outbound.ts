@@ -1,9 +1,10 @@
-import { prisma, XActionStatus, XActionType } from "@el-dorado/db";
+import { prisma, XActionStatus, XActionType, XHandledItemType } from "@el-dorado/db";
 import { getAppTimeZone, startOfDayApp, startOfNextDayApp } from "../time";
 import { XClient, getBearerTokenFromEnv } from "./client";
 import type { XRecentSearchResponse, XTweet } from "./types";
 import { ensureAccessToken } from "./credentials";
 import { replyToTweet } from "./write";
+import { markHandledItemDone, markHandledItemError, reserveHandledItem } from "./handled";
 
 type Track = "depositors" | "ambassadors";
 
@@ -78,26 +79,10 @@ function buildReply(args: {
   );
 
   const cta = isHighIntentDepositor(args.tweetText)
-    ? "If you want a 200% deposit match (Free Play bonus), check EldoradoSB: https://eldoradosb.com/."
-    : "If you’re looking for a 200% deposit match (Free Play bonus), check out EldoradoSB.";
+    ? "If you want a 200% deposit match (Free Play bonus), DM us LINK and we'll send the signup link."
+    : "If you're looking for a 200% deposit match (Free Play bonus), DM us LINK for the signup link.";
 
   return clampText(`${helpful} ${cta}${footer}`, 275);
-}
-
-async function hasAlreadyRepliedToday(args: { dayStart: Date; dayEnd: Date; targetTweetId: string }) {
-  const existing = await prisma.xActionLog.findFirst({
-    where: {
-      actionType: XActionType.outbound_comment,
-      status: XActionStatus.success,
-      createdAt: { gte: args.dayStart, lt: args.dayEnd },
-      meta: {
-        path: ["targetTweetId"],
-        equals: args.targetTweetId,
-      },
-    },
-    select: { id: true },
-  });
-  return Boolean(existing);
 }
 
 export async function runOutboundEngagement(args: {
@@ -185,7 +170,16 @@ export async function runOutboundEngagement(args: {
   let picked: XTweet | null = null;
   for (const t of candidates) {
     if (!t.id) continue;
-    if (await hasAlreadyRepliedToday({ dayStart, dayEnd, targetTweetId: t.id })) continue;
+    if (args.dryRun) {
+      picked = t;
+      break;
+    }
+
+    const reserved = await reserveHandledItem({
+      type: XHandledItemType.outbound_target_tweet,
+      externalId: t.id,
+    });
+    if (!reserved) continue;
     picked = t;
     break;
   }
@@ -222,27 +216,57 @@ export async function runOutboundEngagement(args: {
   }
 
   const accessToken = await ensureAccessToken();
-  const posted = await replyToTweet({
-    accessToken,
-    text: replyText,
-    inReplyToTweetId: picked.id,
-  });
+  try {
+    const posted = await replyToTweet({
+      accessToken,
+      text: replyText,
+      inReplyToTweetId: picked.id,
+    });
 
-  await prisma.xActionLog.create({
-    data: {
-      actionType: XActionType.outbound_comment,
-      status: XActionStatus.success,
-      reason: `outbound:${track}`,
-      xId: posted.id ?? null,
-      meta: { track, query, postsRead, targetTweetId: picked.id, replyText },
-    },
-  });
+    await prisma.xActionLog.create({
+      data: {
+        actionType: XActionType.outbound_comment,
+        status: XActionStatus.success,
+        reason: `outbound:${track}`,
+        xId: posted.id ?? null,
+        meta: { track, query, postsRead, targetTweetId: picked.id, replyText },
+      },
+    });
 
-  return {
-    status: "replied",
-    track,
-    targetTweetId: picked.id,
-    replyTweetId: posted.id,
-    postsRead,
-  };
+    await markHandledItemDone({ type: XHandledItemType.outbound_target_tweet, externalId: picked.id });
+
+    return {
+      status: "replied",
+      track,
+      targetTweetId: picked.id,
+      replyTweetId: posted.id,
+      postsRead,
+    };
+  } catch (err) {
+    try {
+      await prisma.xActionLog.create({
+        data: {
+          actionType: XActionType.outbound_comment,
+          status: XActionStatus.error,
+          reason: "outbound_post_error",
+          meta: {
+            track,
+            query,
+            postsRead,
+            targetTweetId: picked.id,
+            replyText,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        },
+      });
+    } catch {
+      // ignore
+    }
+    try {
+      await markHandledItemError({ type: XHandledItemType.outbound_target_tweet, externalId: picked.id, error: err });
+    } catch {
+      // ignore
+    }
+    return { status: "skipped", reason: "outbound_post_error" };
+  }
 }

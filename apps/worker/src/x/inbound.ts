@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
-import { prisma, Prisma, XActionStatus, XActionType } from "@el-dorado/db";
+import { prisma, Prisma, XActionStatus, XActionType, XHandledItemType } from "@el-dorado/db";
 import { ensureAccessToken } from "./credentials";
 import { getMe, getMentions } from "./oauthRead";
 import { replyToTweet } from "./write";
 import { listDmEvents, sendDm, type XDmEvent } from "./dm";
 import { getAppTimeZone, startOfDayApp, startOfNextDayApp } from "../time";
+import { markHandledItemDone, markHandledItemError, reserveHandledItem } from "./handled";
 
 type InboundResult =
   | { status: "skipped"; reason: string }
@@ -122,19 +123,6 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
   return args.destinationUrl;
 }
 
-async function hasLogForSource(args: { actionType: XActionType; key: string; value: string; dayStart: Date; dayEnd: Date }) {
-  const row = await prisma.xActionLog.findFirst({
-    where: {
-      actionType: args.actionType,
-      status: XActionStatus.success,
-      createdAt: { gte: args.dayStart, lt: args.dayEnd },
-      meta: { path: [args.key], equals: args.value } as unknown as Prisma.JsonNullableFilter,
-    },
-    select: { id: true },
-  });
-  return Boolean(row);
-}
-
 async function countAutoRepliesToday(args: { dayStart: Date; dayEnd: Date }) {
   return prisma.xActionLog.count({
     where: {
@@ -200,11 +188,22 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
   const disclaimer = defaultDisclaimer(settings.disclaimerText);
 
+  const accountState = await prisma.xAccountState.upsert({
+    where: { id: 1 },
+    update: {},
+    create: { id: 1 },
+    select: { lastMentionId: true, lastDmEventId: true },
+  });
+
   let repliesSent = 0;
   let dmsSent = 0;
   let postsRead = 0;
   let mentionsScanned = 0;
   let dmsScanned = 0;
+  let mentionError = false;
+  let dmError = false;
+  let newestMentionIdSeen: string | null = null;
+  let newestDmEventIdSeen: string | null = null;
 
   // Mentions: reply publicly for LINK/AMBASSADOR intents only.
   if (args.readBudget > 0) {
@@ -216,21 +215,13 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     const tweets = mentions.data ?? [];
     mentionsScanned = tweets.length;
     postsRead += tweets.length;
+    newestMentionIdSeen = mentions.meta?.newest_id ?? (tweets[0]?.id ?? null);
 
     for (const t of tweets) {
       if (repliesSent + dmsSent >= remaining) break;
       if (!t.id || !t.text) continue;
       const text = t.text;
       if (!isLinkIntent(text) && !isAmbassadorIntent(text)) continue;
-
-      const alreadyReplied = await hasLogForSource({
-        actionType: XActionType.reply,
-        key: "sourceTweetId",
-        value: t.id,
-        dayStart,
-        dayEnd,
-      });
-      if (alreadyReplied) continue;
 
       const daySeed = Number(dayStart.getTime() / 1000) + t.id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
       const baseUrl = settings.publicBaseUrl ?? null;
@@ -265,23 +256,51 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
         continue;
       }
 
-      const posted = await replyToTweet({
-        accessToken,
-        text: replyText,
-        inReplyToTweetId: t.id,
+      const reserved = await reserveHandledItem({
+        type: XHandledItemType.mention_tweet,
+        externalId: t.id,
       });
+      if (!reserved) continue;
 
-      await prisma.xActionLog.create({
-        data: {
-          actionType: XActionType.reply,
-          status: XActionStatus.success,
-          reason: "auto_reply:mention",
-          xId: posted.id ?? null,
-          meta: { sourceTweetId: t.id, replyText, linkUrl },
-        },
-      });
+      try {
+        const posted = await replyToTweet({
+          accessToken,
+          text: replyText,
+          inReplyToTweetId: t.id,
+        });
 
-      repliesSent += 1;
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.reply,
+            status: XActionStatus.success,
+            reason: "auto_reply:mention",
+            xId: posted.id ?? null,
+            meta: { sourceTweetId: t.id, replyText, linkUrl },
+          },
+        });
+
+        await markHandledItemDone({ type: XHandledItemType.mention_tweet, externalId: t.id });
+        repliesSent += 1;
+      } catch (err) {
+        mentionError = true;
+        try {
+          await prisma.xActionLog.create({
+            data: {
+              actionType: XActionType.reply,
+              status: XActionStatus.error,
+              reason: "auto_reply:mention_error",
+              meta: { sourceTweetId: t.id, replyText, message: err instanceof Error ? err.message : String(err) },
+            },
+          });
+        } catch {
+          // ignore
+        }
+        try {
+          await markHandledItemError({ type: XHandledItemType.mention_tweet, externalId: t.id, error: err });
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 
@@ -291,21 +310,13 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     const dmRes = await listDmEvents({ accessToken, maxResults: 20 });
     const events = dmRes.data ?? [];
     dmsScanned = events.length;
+    newestDmEventIdSeen = events[0]?.id ?? null;
 
     for (const e of events) {
       if (repliesSent + dmsSent >= remaining) break;
       const event = e as XDmEvent;
       if (!event.id || !event.sender_id || !event.text) continue;
       if (event.sender_id === meUser.id) continue;
-
-      const alreadyHandled = await hasLogForSource({
-        actionType: XActionType.dm,
-        key: "sourceDmEventId",
-        value: event.id,
-        dayStart,
-        dayEnd,
-      });
-      if (alreadyHandled) continue;
 
       const linkUrl = await createTrackingUrl({
         baseUrl: settings.publicBaseUrl ?? null,
@@ -331,23 +342,70 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
         continue;
       }
 
-      const sent = await sendDm({
-        accessToken,
-        participantId: event.sender_id,
-        text: msg,
+      const reserved = await reserveHandledItem({
+        type: XHandledItemType.dm_event,
+        externalId: event.id,
       });
+      if (!reserved) continue;
 
-      await prisma.xActionLog.create({
-        data: {
-          actionType: XActionType.dm,
-          status: XActionStatus.success,
-          reason: "auto_reply:dm",
-          xId: sent.data?.dm_event_id ?? null,
-          meta: { sourceDmEventId: event.id, targetUserId: event.sender_id, msg, linkUrl },
-        },
-      });
-      dmsSent += 1;
+      try {
+        const sent = await sendDm({
+          accessToken,
+          participantId: event.sender_id,
+          text: msg,
+        });
+
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.dm,
+            status: XActionStatus.success,
+            reason: "auto_reply:dm",
+            xId: sent.data?.dm_event_id ?? null,
+            meta: { sourceDmEventId: event.id, targetUserId: event.sender_id, msg, linkUrl },
+          },
+        });
+
+        await markHandledItemDone({ type: XHandledItemType.dm_event, externalId: event.id });
+        dmsSent += 1;
+      } catch (err) {
+        dmError = true;
+        try {
+          await prisma.xActionLog.create({
+            data: {
+              actionType: XActionType.dm,
+              status: XActionStatus.error,
+              reason: "auto_reply:dm_error",
+              meta: {
+                sourceDmEventId: event.id,
+                targetUserId: event.sender_id,
+                msg,
+                message: err instanceof Error ? err.message : String(err),
+              },
+            },
+          });
+        } catch {
+          // ignore
+        }
+        try {
+          await markHandledItemError({ type: XHandledItemType.dm_event, externalId: event.id, error: err });
+        } catch {
+          // ignore
+        }
+      }
     }
+  }
+
+  try {
+    await prisma.xAccountState.update({
+      where: { id: 1 },
+      data: {
+        lastMentionId: newestMentionIdSeen ?? accountState.lastMentionId,
+        lastDmEventId: newestDmEventIdSeen ?? accountState.lastDmEventId,
+      },
+      select: { id: true },
+    });
+  } catch {
+    // ignore: best-effort
   }
 
   await prisma.xActionLog.create({
@@ -355,7 +413,17 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       actionType: XActionType.inbound_scan,
       status: XActionStatus.success,
       reason: args.dryRun ? "inbound_scan:dry_run" : "inbound_scan",
-      meta: { mentionsScanned, dmsScanned, repliesSent, dmsSent, postsRead },
+      meta: {
+        mentionsScanned,
+        dmsScanned,
+        repliesSent,
+        dmsSent,
+        postsRead,
+        mentionError,
+        dmError,
+        newestMentionIdSeen,
+        newestDmEventIdSeen,
+      },
     },
   });
 

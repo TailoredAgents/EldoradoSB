@@ -20,11 +20,13 @@
 This repo stores SQL migrations in `prisma/migrations/*/migration.sql`.
 
 Recommended approach:
-- Run migrations from your machine against Render Postgres using `DATABASE_URL`.
+- Local dev: `npm run db:migrate:dev`
+- Render/prod: `npm run db:migrate:deploy`
 
 Commands:
 - `npm run db:generate`
-- `npm run db:migrate:dev`
+- `npm run db:migrate:dev` (dev)
+- `npm run db:migrate:deploy` (prod)
 - `npm run db:seed`
 
 ## Emergency stop checklist

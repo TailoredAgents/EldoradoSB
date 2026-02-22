@@ -32,6 +32,12 @@ enum WorkerRunStatus {
   error
 }
 
+enum CampaignType {
+  depositors
+  ambassadors
+  mixed
+}
+
 model Prospect {
   id        String         @id @default(cuid())
   createdAt DateTime       @default(now())
@@ -203,4 +209,48 @@ model WorkerRun {
 
   @@index([startedAt])
   @@index([status])
+}
+
+model Campaign {
+  id        String       @id @default(cuid())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  name   String
+  type   CampaignType @default(mixed)
+  active Boolean      @default(true)
+
+  trackingLinks TrackingLink[]
+}
+
+model TrackingLink {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  token          String  @unique
+  label          String?
+  destinationUrl String
+  active         Boolean @default(true)
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId String
+
+  clickEvents ClickEvent[]
+
+  @@index([campaignId])
+}
+
+model ClickEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  referrer  String?
+  userAgent String?
+
+  trackingLink   TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
+  trackingLinkId String
+
+  @@index([trackingLinkId])
+  @@index([createdAt])
 }

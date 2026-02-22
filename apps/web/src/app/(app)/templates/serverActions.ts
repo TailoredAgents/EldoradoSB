@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@el-dorado/db";
+import { Prisma } from "@el-dorado/db";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -13,10 +14,12 @@ export async function saveTemplatesAction(formData: FormData) {
     redirect("/templates?error=json");
   }
 
+  const templates = (parsed === null ? {} : parsed) as Prisma.InputJsonValue;
+
   await prisma.settings.upsert({
     where: { id: 1 },
-    update: { templates: parsed as any },
-    create: { id: 1, templates: parsed as any },
+    update: { templates },
+    create: { id: 1, templates },
   });
 
   revalidatePath("/templates");

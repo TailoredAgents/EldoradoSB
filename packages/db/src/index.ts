@@ -3,6 +3,7 @@ export {
   ProspectStatus,
   OutreachChannel,
   WorkerRunStatus,
+  CampaignType,
   Prisma,
 } from "@prisma/client";
 export type {
@@ -13,4 +14,7 @@ export type {
   Settings,
   UsageLedger,
   WorkerRun,
+  Campaign,
+  TrackingLink,
+  ClickEvent,
 } from "@prisma/client";

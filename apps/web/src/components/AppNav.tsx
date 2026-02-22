@@ -7,6 +7,7 @@ const NAV = [
   { href: "/prospects?bucket=in-progress", label: "In Progress" },
   { href: "/prospects?bucket=done", label: "Done" },
   { href: "/reports", label: "Reports" },
+  { href: "/campaigns", label: "Campaigns" },
   { href: "/templates", label: "Templates" },
   { href: "/usage", label: "Usage" },
   { href: "/settings", label: "Settings" },

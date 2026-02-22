@@ -2,6 +2,7 @@
 
 import { prisma } from "@el-dorado/db";
 import { ProspectStatus } from "@el-dorado/db";
+import { OutreachChannel } from "@el-dorado/db";
 import { revalidatePath } from "next/cache";
 
 function requireString(value: FormDataEntryValue | null, name: string): string {
@@ -57,7 +58,11 @@ export async function updateProspectNotesAction(formData: FormData) {
 
 export async function addOutreachEventAction(formData: FormData) {
   const prospectId = requireString(formData.get("prospectId"), "prospectId");
-  const channel = requireString(formData.get("channel"), "channel");
+  const channelRaw = requireString(formData.get("channel"), "channel");
+  const channel = channelRaw as OutreachChannel;
+  if (!Object.values(OutreachChannel).includes(channel)) {
+    throw new Error("Invalid channel");
+  }
   const eventType = requireString(formData.get("eventType"), "eventType");
   const outcome = String(formData.get("outcome") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
@@ -76,7 +81,7 @@ export async function addOutreachEventAction(formData: FormData) {
   await prisma.outreachEvent.create({
     data: {
       prospectId,
-      channel: channel as any,
+      channel,
       eventType,
       outcome,
       followUpAt,
@@ -87,15 +92,15 @@ export async function addOutreachEventAction(formData: FormData) {
   });
 
   // Lightweight status auto-advance based on common event types.
-  const statusMap: Record<string, any> = {
-    queued: "queued",
-    contacted: "contacted",
-    replied: "replied",
-    negotiating: "negotiating",
-    signed: "signed",
-    rejected: "rejected",
-    dnc: "dnc",
-    done: "done",
+  const statusMap: Record<string, ProspectStatus> = {
+    queued: ProspectStatus.queued,
+    contacted: ProspectStatus.contacted,
+    replied: ProspectStatus.replied,
+    negotiating: ProspectStatus.negotiating,
+    signed: ProspectStatus.signed,
+    rejected: ProspectStatus.rejected,
+    dnc: ProspectStatus.dnc,
+    done: ProspectStatus.done,
   };
 
   const nextStatus = statusMap[eventType.toLowerCase()];

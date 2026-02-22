@@ -35,3 +35,12 @@ Commands:
    - `X_BEARER_TOKEN`
    - `OPENAI_API_KEY`
 
+## Weekly results (manual learning loop)
+
+If the sportsbook provider cannot attribute deposits automatically yet, log outcomes manually so the system can learn:
+
+1. Open the signed ambassador prospect in the web UI.
+2. In **Log outreach**, set **Event** to `weekly_results`.
+3. Fill `depositors` and `depositsUsd` (optional) and add notes if useful.
+4. Use the **Reports** page to see top ambassadors and trends.
+

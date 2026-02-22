@@ -328,6 +328,7 @@ export default async function ProspectDetailPage({
                   <option value="replied">replied</option>
                   <option value="negotiating">negotiating</option>
                   <option value="signed">signed</option>
+                  <option value="weekly_results">weekly_results</option>
                   <option value="rejected">rejected</option>
                   <option value="dnc">dnc</option>
                   <option value="done">done</option>

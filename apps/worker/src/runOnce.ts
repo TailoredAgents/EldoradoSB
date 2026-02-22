@@ -1,4 +1,4 @@
-import { prisma } from "@el-dorado/db";
+import { prisma, Prisma } from "@el-dorado/db";
 import { WorkerRunStatus } from "@el-dorado/db";
 import { getOrCreateSettings } from "./settings";
 import { getTodayUsage, incrementTodayUsage } from "./usage";
@@ -29,6 +29,7 @@ import { ensureAccessToken } from "./x/credentials";
 import { postTweet } from "./x/write";
 import { XActionStatus, XActionType } from "@el-dorado/db";
 import { runAutoPost } from "./x/autopost";
+import { runOutboundEngagement } from "./x/outbound";
 
 export type RunOptions = {
   dryRun: boolean;
@@ -69,12 +70,12 @@ export async function runOnce(options: RunOptions) {
     }
 
     // Phase 3: scheduled auto-posting for the Eldorado account (does not consume post-read budget).
-    let xAutoPost: { status: string; [k: string]: unknown } | null = null;
+    let xAutoPost: Prisma.InputJsonValue | null = null;
     try {
-      xAutoPost = await runAutoPost({ dryRun: options.dryRun });
+      xAutoPost = (await runAutoPost({ dryRun: options.dryRun })) as unknown as Prisma.InputJsonValue;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      xAutoPost = { status: "error", error: message };
+      xAutoPost = { status: "error", error: message } as unknown as Prisma.InputJsonValue;
       try {
         await prisma.xActionLog.create({
           data: {
@@ -150,9 +151,9 @@ export async function runOnce(options: RunOptions) {
 
     const maxPostReadsThisRun = settings.maxPostReadsPerRun;
     const remainingToday = Math.max(0, settings.maxPostReadsPerDay - today.xPostReads);
-    const remainingThisRun = Math.min(maxPostReadsThisRun, remainingToday);
+    const remainingThisRunInitial = Math.min(maxPostReadsThisRun, remainingToday);
 
-    if (remainingThisRun <= 0) {
+    if (remainingThisRunInitial <= 0) {
       await prisma.workerRun.update({
         where: { id: run.id },
         data: {
@@ -165,11 +166,47 @@ export async function runOnce(options: RunOptions) {
               maxPostReadsPerRun: settings.maxPostReadsPerRun,
               maxPostReadsPerDay: settings.maxPostReadsPerDay,
             },
+            xAutoPost,
           },
         },
       });
       return { status: "skipped_budget" as const, runId: run.id };
     }
+
+    let remainingThisRun = remainingThisRunInitial;
+
+    // Phase 5: search-based outbound engagement (1 reply/run, limited daily quota).
+    // Runs before discovery and uses a small portion of the read budget.
+    let xOutbound: Prisma.InputJsonValue | null = null;
+    let outboundPostReads = 0;
+    try {
+      const outboundReadBudget = Math.min(10, remainingThisRun);
+      if (outboundReadBudget > 0) {
+        const outRes = await runOutboundEngagement({
+          dryRun: options.dryRun,
+          readBudget: outboundReadBudget,
+        });
+        xOutbound = outRes as unknown as Prisma.InputJsonValue;
+        if (outRes.status === "replied") outboundPostReads = outRes.postsRead;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      xOutbound = { status: "error", error: message } as unknown as Prisma.InputJsonValue;
+      try {
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.outbound_comment,
+            status: XActionStatus.error,
+            reason: "outbound_error",
+            meta: { message },
+          },
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    remainingThisRun = Math.max(0, remainingThisRun - outboundPostReads);
 
     if (!options.dryRun) {
       const runIndex = getRunIndexUtc(90);
@@ -185,6 +222,23 @@ export async function runOnce(options: RunOptions) {
         epsilon,
       });
       const queries = adaptive.queries;
+
+      if (!process.env.X_BEARER_TOKEN) {
+        await prisma.workerRun.update({
+          where: { id: run.id },
+          data: {
+            status: WorkerRunStatus.success,
+            finishedAt: new Date(),
+            stats: {
+              phase: 4,
+              note: "missing X_BEARER_TOKEN (skipping discovery pipeline)",
+              xAutoPost,
+              xOutbound,
+            },
+          },
+        });
+        return { status: "success" as const, runId: run.id };
+      }
 
       const x = new XClient({
         bearerToken: getBearerTokenFromEnv(),
@@ -278,7 +332,7 @@ export async function runOnce(options: RunOptions) {
         }
       }
 
-      const xPostReadsDelta = discoveryPostReads + refreshedPostReads + sampledPostReads;
+      const xPostReadsDelta = outboundPostReads + discoveryPostReads + refreshedPostReads + sampledPostReads;
 
       // Analyzer step (Phase 5): score a small number of new prospects with enough samples.
       const modelExtract = getModelExtract();
@@ -576,11 +630,14 @@ export async function runOnce(options: RunOptions) {
           stats: {
             phase: 6,
             xAutoPost,
+            xOutbound,
             runIndex,
             queryIds: queries.map((q) => q.id),
             querySelection: adaptive.debug,
             budgets: {
-              remainingThisRun,
+              remainingThisRunInitial,
+              remainingThisRunAfterOutbound: remainingThisRun,
+              outboundPostReads,
               discoveryTargetPerQuery: perQuery,
               refreshBudget,
               samplingBudget,
@@ -637,7 +694,7 @@ export async function runOnce(options: RunOptions) {
       data: {
         status: WorkerRunStatus.success,
         finishedAt: new Date(),
-        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xAutoPost },
+        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xAutoPost, xOutbound },
       },
     });
 

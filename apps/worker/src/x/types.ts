@@ -11,6 +11,7 @@ export type XTweet = {
   text: string;
   author_id?: string;
   created_at?: string;
+  lang?: string;
   public_metrics?: XPublicMetrics;
 };
 

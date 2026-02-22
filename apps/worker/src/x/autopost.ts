@@ -1,7 +1,7 @@
 import { prisma, XActionStatus, XActionType } from "@el-dorado/db";
 import { ensureAccessToken } from "./credentials";
 import { postTweet } from "./write";
-import { addDaysUtc, getAppTimeZone, getSlotInstantForTodayApp, startOfDayApp } from "../time";
+import { getAppTimeZone, getSlotInstantForTodayApp, startOfDayApp, startOfNextDayApp } from "../time";
 
 type AutoPostResult =
   | { status: "skipped"; reason: string }
@@ -125,7 +125,7 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
   const now = new Date();
   const tz = getAppTimeZone(); // default America/New_York
   const dayStart = startOfDayApp(now, tz);
-  const dayEnd = startOfDayApp(addDaysUtc(now, 1), tz);
+  const dayEnd = startOfNextDayApp(now, tz);
 
   const postsToday = await prisma.xActionLog.count({
     where: {

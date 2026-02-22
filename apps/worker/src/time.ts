@@ -84,10 +84,19 @@ export function startOfDayApp(date: Date, timeZone = getAppTimeZone()): Date {
   return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day }, timeZone);
 }
 
-export function addDaysUtc(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d;
+export function startOfNextDayApp(date: Date, timeZone = getAppTimeZone()): Date {
+  const parts = getPartsInTimeZone(date, timeZone);
+  // Increment day in a calendar-safe way (month/year rollover), then convert that local date's midnight to UTC.
+  const asUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  asUtc.setUTCDate(asUtc.getUTCDate() + 1);
+  return zonedTimeToUtc(
+    {
+      year: asUtc.getUTCFullYear(),
+      month: asUtc.getUTCMonth() + 1,
+      day: asUtc.getUTCDate(),
+    },
+    timeZone,
+  );
 }
 
 export function getSlotInstantForTodayApp(args: {

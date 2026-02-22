@@ -1,7 +1,21 @@
 import { prisma } from "@el-dorado/db";
-import { startXOAuthAction, disconnectXAction } from "./serverActions";
+import {
+  startXOAuthAction,
+  disconnectXAction,
+  updateXAccountSettingsAction,
+} from "./serverActions";
 
 export const dynamic = "force-dynamic";
+
+function readSchedulePosts(schedule: unknown): string[] {
+  if (!schedule || typeof schedule !== "object") return [];
+  const posts = (schedule as { posts?: unknown }).posts;
+  if (!Array.isArray(posts)) return [];
+  return posts
+    .map((x) => String(x ?? "").trim())
+    .filter((x) => /^\d{2}:\d{2}$/.test(x))
+    .slice(0, 3);
+}
 
 export default async function XPage({
   searchParams,
@@ -25,6 +39,11 @@ export default async function XPage({
   });
 
   const isConnected = Boolean(cred);
+
+  const schedulePosts = readSchedulePosts(settings?.schedule ?? null);
+  const postTime1 = schedulePosts[0] ?? "11:00";
+  const postTime2 = schedulePosts[1] ?? "16:00";
+  const postTime3 = schedulePosts[2] ?? "21:30";
 
   return (
     <div className="space-y-4">
@@ -108,33 +127,131 @@ export default async function XPage({
         <div className="rounded-xl border border-white/10 bg-black/30 p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Agent settings</div>
           <div className="mt-3 text-sm text-white/80">
-            {settings ? (
-              <div className="space-y-1 text-sm">
-                <div>
-                  enabled: <span className="text-white/70">{String(settings.enabled)}</span>
-                </div>
-                <div>
-                  autoPost:{" "}
-                  <span className="text-white/70">{String(settings.autoPostEnabled)}</span>
-                </div>
-                <div>
-                  autoReply:{" "}
-                  <span className="text-white/70">{String(settings.autoReplyEnabled)}</span>
-                </div>
-                <div>
-                  outbound:{" "}
-                  <span className="text-white/70">{String(settings.outboundEnabled)}</span>
-                </div>
-              </div>
+            {!settings ? (
+              <div className="text-white/60">Settings row will be created after connecting.</div>
             ) : (
-              <div className="text-white/60">
-                Settings row will be created after connecting.
-              </div>
+              <form action={updateXAccountSettingsAction} className="space-y-4">
+                <div className="space-y-2 rounded-lg border border-white/10 bg-black/40 p-3">
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="enabled"
+                      defaultChecked={settings.enabled}
+                      className="h-4 w-4 accent-amber-400"
+                    />
+                    <span>Enabled</span>
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="autoPostEnabled"
+                      defaultChecked={settings.autoPostEnabled}
+                      className="h-4 w-4 accent-amber-400"
+                    />
+                    <span>Auto-post (3/day)</span>
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="autoReplyEnabled"
+                      defaultChecked={settings.autoReplyEnabled}
+                      className="h-4 w-4 accent-amber-400"
+                    />
+                    <span>Auto-reply (Phase 4)</span>
+                  </label>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="outboundEnabled"
+                      defaultChecked={settings.outboundEnabled}
+                      className="h-4 w-4 accent-amber-400"
+                    />
+                    <span>Outbound engagement (Phase 5)</span>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 rounded-lg border border-white/10 bg-black/40 p-3 md:grid-cols-3">
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Max posts/day</div>
+                    <input
+                      name="maxPostsPerDay"
+                      type="number"
+                      min={0}
+                      max={20}
+                      defaultValue={settings.maxPostsPerDay}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Max auto replies/day</div>
+                    <input
+                      name="maxAutoRepliesPerDay"
+                      type="number"
+                      min={0}
+                      max={500}
+                      defaultValue={settings.maxAutoRepliesPerDay}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Max outbound/day</div>
+                    <input
+                      name="maxOutboundRepliesPerDay"
+                      type="number"
+                      min={0}
+                      max={200}
+                      defaultValue={settings.maxOutboundRepliesPerDay}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 rounded-lg border border-white/10 bg-black/40 p-3 md:grid-cols-3">
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 1 (ET)</div>
+                    <input
+                      name="postTime1"
+                      defaultValue={postTime1}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="11:00"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 2 (ET)</div>
+                    <input
+                      name="postTime2"
+                      defaultValue={postTime2}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="16:00"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 3 (ET)</div>
+                    <input
+                      name="postTime3"
+                      defaultValue={postTime3}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="21:30"
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-white/60">Disclaimer</div>
+                  <textarea
+                    name="disclaimerText"
+                    defaultValue={settings.disclaimerText ?? ""}
+                    rows={3}
+                    placeholder="21+ | Terms apply | Gamble responsibly"
+                    className="mt-3 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                  />
+                </div>
+
+                <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+                  Save
+                </button>
+              </form>
             )}
-          </div>
-          <div className="mt-4 text-xs text-white/50">
-            Full controls (toggles/caps/schedule) come in the next phase; this page
-            confirms OAuth + logs.
           </div>
         </div>
       </div>
@@ -173,4 +290,3 @@ export default async function XPage({
     </div>
   );
 }
-

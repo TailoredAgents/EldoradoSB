@@ -28,6 +28,7 @@ import { runWriter } from "./openai/writer";
 import { ensureAccessToken } from "./x/credentials";
 import { postTweet } from "./x/write";
 import { XActionStatus, XActionType } from "@el-dorado/db";
+import { runAutoPost } from "./x/autopost";
 
 export type RunOptions = {
   dryRun: boolean;
@@ -67,6 +68,27 @@ export async function runOnce(options: RunOptions) {
       return { status: "skipped_disabled" as const, runId: run.id };
     }
 
+    // Phase 3: scheduled auto-posting for the Eldorado account (does not consume post-read budget).
+    let xAutoPost: { status: string; [k: string]: unknown } | null = null;
+    try {
+      xAutoPost = await runAutoPost({ dryRun: options.dryRun });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      xAutoPost = { status: "error", error: message };
+      try {
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.post,
+            status: XActionStatus.error,
+            reason: "autopost_error",
+            meta: { message },
+          },
+        });
+      } catch {
+        // ignore: don't fail the whole run if logging fails
+      }
+    }
+
     // Manual test: post a tweet using OAuth credentials (safe: only when flag is provided).
     if (options.xTestPost) {
       if (options.dryRun) {
@@ -75,7 +97,7 @@ export async function runOnce(options: RunOptions) {
           data: {
             status: WorkerRunStatus.success,
             finishedAt: new Date(),
-            stats: { phase: "x_test_post", dryRun: true },
+            stats: { phase: "x_test_post", dryRun: true, xAutoPost },
           },
         });
         return { status: "success" as const, runId: run.id };
@@ -103,7 +125,7 @@ export async function runOnce(options: RunOptions) {
         data: {
           status: WorkerRunStatus.success,
           finishedAt: new Date(),
-          stats: { phase: "x_test_post", xId: posted.id ?? null },
+          stats: { phase: "x_test_post", xId: posted.id ?? null, xAutoPost },
         },
       });
       return { status: "success" as const, runId: run.id };
@@ -553,6 +575,7 @@ export async function runOnce(options: RunOptions) {
           finishedAt: new Date(),
           stats: {
             phase: 6,
+            xAutoPost,
             runIndex,
             queryIds: queries.map((q) => q.id),
             querySelection: adaptive.debug,
@@ -614,7 +637,7 @@ export async function runOnce(options: RunOptions) {
       data: {
         status: WorkerRunStatus.success,
         finishedAt: new Date(),
-        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)" },
+        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xAutoPost },
       },
     });
 

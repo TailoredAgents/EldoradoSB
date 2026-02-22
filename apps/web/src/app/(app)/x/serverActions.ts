@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma, XActionStatus, XActionType } from "@el-dorado/db";
 import { encryptToken } from "@el-dorado/shared";
+import { Prisma } from "@el-dorado/db";
 
 type TokenResponse = {
   access_token?: string;
@@ -132,6 +133,86 @@ export async function startXOAuthAction() {
 export async function disconnectXAction() {
   await prisma.xCredential.deleteMany({});
   redirect("/x?ok=disconnected");
+}
+
+function parseIntStrict(value: FormDataEntryValue | null): number {
+  const str = String(value ?? "").trim();
+  if (!str) throw new Error("missing");
+  const num = Number(str);
+  if (!Number.isFinite(num) || !Number.isInteger(num)) throw new Error("invalid");
+  return num;
+}
+
+function parseTimeHHMM(value: FormDataEntryValue | null, fallback: string): string {
+  const str = String(value ?? "").trim();
+  if (!str) return fallback;
+  if (!/^\d{2}:\d{2}$/.test(str)) throw new Error("invalid time");
+  const [hh, mm] = str.split(":").map((x) => Number(x));
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) throw new Error("invalid time");
+  if (hh < 0 || hh > 23) throw new Error("invalid time");
+  if (mm < 0 || mm > 59) throw new Error("invalid time");
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+export async function updateXAccountSettingsAction(formData: FormData) {
+  try {
+    const enabled = formData.get("enabled") === "on";
+    const autoPostEnabled = formData.get("autoPostEnabled") === "on";
+    const autoReplyEnabled = formData.get("autoReplyEnabled") === "on";
+    const outboundEnabled = formData.get("outboundEnabled") === "on";
+
+    const maxPostsPerDay = parseIntStrict(formData.get("maxPostsPerDay"));
+    const maxAutoRepliesPerDay = parseIntStrict(formData.get("maxAutoRepliesPerDay"));
+    const maxOutboundRepliesPerDay = parseIntStrict(formData.get("maxOutboundRepliesPerDay"));
+
+    if (
+      maxPostsPerDay < 0 ||
+      maxPostsPerDay > 20 ||
+      maxAutoRepliesPerDay < 0 ||
+      maxAutoRepliesPerDay > 500 ||
+      maxOutboundRepliesPerDay < 0 ||
+      maxOutboundRepliesPerDay > 200
+    ) {
+      throw new Error("invalid caps");
+    }
+
+    const post1 = parseTimeHHMM(formData.get("postTime1"), "11:00");
+    const post2 = parseTimeHHMM(formData.get("postTime2"), "16:00");
+    const post3 = parseTimeHHMM(formData.get("postTime3"), "21:30");
+
+    const disclaimerText = String(formData.get("disclaimerText") ?? "").trim() || null;
+
+    await prisma.xAccountSettings.upsert({
+      where: { id: 1 },
+      update: {
+        enabled,
+        autoPostEnabled,
+        autoReplyEnabled,
+        outboundEnabled,
+        maxPostsPerDay,
+        maxAutoRepliesPerDay,
+        maxOutboundRepliesPerDay,
+        schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
+        disclaimerText,
+      },
+      create: {
+        id: 1,
+        enabled,
+        autoPostEnabled,
+        autoReplyEnabled,
+        outboundEnabled,
+        maxPostsPerDay,
+        maxAutoRepliesPerDay,
+        maxOutboundRepliesPerDay,
+        schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
+        disclaimerText,
+      },
+    });
+
+    redirect("/x?ok=1");
+  } catch {
+    redirect("/x?error=1");
+  }
 }
 
 export async function exchangeXOAuthCodeAction(args: { code: string; state: string }) {

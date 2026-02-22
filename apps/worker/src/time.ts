@@ -84,3 +84,29 @@ export function startOfDayApp(date: Date, timeZone = getAppTimeZone()): Date {
   return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day }, timeZone);
 }
 
+export function addDaysUtc(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+
+export function getSlotInstantForTodayApp(args: {
+  timeHHMM: string;
+  now?: Date;
+  timeZone?: string;
+}): Date {
+  const now = args.now ?? new Date();
+  const timeZone = args.timeZone ?? getAppTimeZone();
+  const parts = getPartsInTimeZone(now, timeZone);
+
+  const [hhStr, mmStr] = args.timeHHMM.split(":");
+  const hour = Number(hhStr);
+  const minute = Number(mmStr);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) throw new Error("Invalid timeHHMM");
+
+  return zonedTimeToUtc(
+    { year: parts.year, month: parts.month, day: parts.day, hour, minute, second: 0 },
+    timeZone,
+  );
+}
+

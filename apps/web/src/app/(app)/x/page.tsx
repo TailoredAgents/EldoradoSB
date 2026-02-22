@@ -237,6 +237,19 @@ export default async function XPage({
                 </div>
 
                 <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-white/60">Public base URL</div>
+                  <div className="mt-2 text-xs text-white/50">
+                    Used to generate tracked links (e.g., <span className="font-mono">https://your-web.onrender.com</span>).
+                  </div>
+                  <input
+                    name="publicBaseUrl"
+                    defaultValue={settings.publicBaseUrl ?? ""}
+                    placeholder="https://your-web.onrender.com"
+                    className="mt-3 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
                   <div className="text-xs uppercase tracking-wide text-white/60">Disclaimer</div>
                   <textarea
                     name="disclaimerText"

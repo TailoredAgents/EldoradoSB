@@ -293,6 +293,8 @@ model XAccountSettings {
   autoReplyEnabled Boolean @default(false)
   outboundEnabled  Boolean @default(false)
 
+  publicBaseUrl String?
+
   maxPostsPerDay          Int @default(3)
   maxAutoRepliesPerDay    Int @default(60)
   maxOutboundRepliesPerDay Int @default(10)

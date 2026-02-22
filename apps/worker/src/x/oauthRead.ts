@@ -1,0 +1,52 @@
+import type { XMeResponse, XUserMentionsResponse } from "./types";
+
+function getApiBaseUrl(): string {
+  return process.env.X_API_BASE_URL ?? "https://api.x.com/2";
+}
+
+async function getJson<T>(args: { accessToken: string; path: string; params?: Record<string, string | number | undefined> }): Promise<T> {
+  const url = new URL(`${getApiBaseUrl()}/${args.path.replace(/^\//, "")}`);
+  for (const [k, v] of Object.entries(args.params ?? {})) {
+    if (v === undefined) continue;
+    url.searchParams.set(k, String(v));
+  }
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      "user-agent": "ElDoradoSBOutreachAgent/1.0",
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`X OAuth GET ${args.path} failed (${res.status}): ${text || res.statusText}`);
+  }
+
+  return (await res.json()) as T;
+}
+
+export async function getMe(args: { accessToken: string }) {
+  return getJson<XMeResponse>({ accessToken: args.accessToken, path: "users/me" });
+}
+
+export async function getMentions(args: {
+  accessToken: string;
+  userId: string;
+  maxResults: number;
+  paginationToken?: string;
+}) {
+  return getJson<XUserMentionsResponse>({
+    accessToken: args.accessToken,
+    path: `users/${args.userId}/mentions`,
+    params: {
+      max_results: Math.min(Math.max(args.maxResults, 5), 100),
+      pagination_token: args.paginationToken,
+      "tweet.fields": ["author_id", "created_at", "lang"].join(","),
+      expansions: "author_id",
+      "user.fields": ["username", "name"].join(","),
+    },
+  });
+}
+

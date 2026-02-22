@@ -30,6 +30,10 @@ export type XUser = {
   public_metrics?: XUserMetrics;
 };
 
+export type XMeResponse = {
+  data?: XUser;
+};
+
 export type XRecentSearchResponse = {
   data?: XTweet[];
   includes?: { users?: XUser[] };
@@ -39,5 +43,11 @@ export type XRecentSearchResponse = {
 export type XUserTweetsResponse = {
   data?: XTweet[];
   meta?: { result_count?: number; next_token?: string };
+};
+
+export type XUserMentionsResponse = {
+  data?: XTweet[];
+  includes?: { users?: XUser[] };
+  meta?: { result_count?: number; next_token?: string; newest_id?: string; oldest_id?: string };
 };
 

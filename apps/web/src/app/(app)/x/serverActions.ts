@@ -161,6 +161,9 @@ export async function updateXAccountSettingsAction(formData: FormData) {
     const autoReplyEnabled = formData.get("autoReplyEnabled") === "on";
     const outboundEnabled = formData.get("outboundEnabled") === "on";
 
+    const publicBaseUrlRaw = String(formData.get("publicBaseUrl") ?? "").trim() || null;
+    const publicBaseUrl = publicBaseUrlRaw ? publicBaseUrlRaw.replace(/\/+$/, "") : null;
+
     const maxPostsPerDay = parseIntStrict(formData.get("maxPostsPerDay"));
     const maxAutoRepliesPerDay = parseIntStrict(formData.get("maxAutoRepliesPerDay"));
     const maxOutboundRepliesPerDay = parseIntStrict(formData.get("maxOutboundRepliesPerDay"));
@@ -189,6 +192,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         autoPostEnabled,
         autoReplyEnabled,
         outboundEnabled,
+        publicBaseUrl,
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
@@ -201,6 +205,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         autoPostEnabled,
         autoReplyEnabled,
         outboundEnabled,
+        publicBaseUrl,
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
@@ -299,6 +304,7 @@ export async function exchangeXOAuthCodeAction(args: { code: string; state: stri
       autoPostEnabled: false,
       autoReplyEnabled: false,
       outboundEnabled: false,
+      publicBaseUrl: null,
       maxPostsPerDay: 3,
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,

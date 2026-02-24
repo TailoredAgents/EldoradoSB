@@ -147,7 +147,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       maxPostsPerDay: 3,
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
-      schedule: { posts: ["11:00", "16:00", "21:30"] },
+      maxOutboundRepliesPerRun: 10,
+      schedule: { posts: ["10:00", "12:30", "15:30", "18:30", "21:00", "23:30"] },
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
     select: {

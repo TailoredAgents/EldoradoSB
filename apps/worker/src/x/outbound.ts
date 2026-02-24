@@ -152,7 +152,7 @@ export async function runOutboundEngagement(args: { dryRun: boolean; readBudget:
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
       maxOutboundRepliesPerRun: 10,
-      schedule: { posts: ["11:00", "16:00", "21:30"] },
+      schedule: { posts: ["10:00", "12:30", "15:30", "18:30", "21:00", "23:30"] },
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
     select: {

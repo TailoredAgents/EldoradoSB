@@ -182,9 +182,12 @@ export async function updateXAccountSettingsAction(formData: FormData) {
       throw new Error("invalid caps");
     }
 
-    const post1 = parseTimeHHMM(formData.get("postTime1"), "11:00");
-    const post2 = parseTimeHHMM(formData.get("postTime2"), "16:00");
-    const post3 = parseTimeHHMM(formData.get("postTime3"), "21:30");
+    const post1 = parseTimeHHMM(formData.get("postTime1"), "10:00");
+    const post2 = parseTimeHHMM(formData.get("postTime2"), "12:30");
+    const post3 = parseTimeHHMM(formData.get("postTime3"), "15:30");
+    const post4 = parseTimeHHMM(formData.get("postTime4"), "18:30");
+    const post5 = parseTimeHHMM(formData.get("postTime5"), "21:00");
+    const post6 = parseTimeHHMM(formData.get("postTime6"), "23:30");
 
     const disclaimerText = String(formData.get("disclaimerText") ?? "").trim() || null;
 
@@ -200,7 +203,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
         maxOutboundRepliesPerRun,
-        schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
+        schedule: { posts: [post1, post2, post3, post4, post5, post6] } as Prisma.InputJsonValue,
         disclaimerText,
       },
       create: {
@@ -214,7 +217,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
         maxOutboundRepliesPerRun,
-        schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
+        schedule: { posts: [post1, post2, post3, post4, post5, post6] } as Prisma.InputJsonValue,
         disclaimerText,
       },
     });
@@ -314,7 +317,7 @@ export async function exchangeXOAuthCodeAction(args: { code: string; state: stri
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
       maxOutboundRepliesPerRun: 10,
-      schedule: { posts: ["11:00", "16:00", "21:30"] },
+      schedule: { posts: ["10:00", "12:30", "15:30", "18:30", "21:00", "23:30"] },
     },
   });
 

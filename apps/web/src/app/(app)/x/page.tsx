@@ -14,7 +14,7 @@ function readSchedulePosts(schedule: unknown): string[] {
   return posts
     .map((x) => String(x ?? "").trim())
     .filter((x) => /^\d{2}:\d{2}$/.test(x))
-    .slice(0, 3);
+    .slice(0, 6);
 }
 
 export default async function XPage({
@@ -41,9 +41,12 @@ export default async function XPage({
   const isConnected = Boolean(cred);
 
   const schedulePosts = readSchedulePosts(settings?.schedule ?? null);
-  const postTime1 = schedulePosts[0] ?? "11:00";
-  const postTime2 = schedulePosts[1] ?? "16:00";
-  const postTime3 = schedulePosts[2] ?? "21:30";
+  const postTime1 = schedulePosts[0] ?? "10:00";
+  const postTime2 = schedulePosts[1] ?? "12:30";
+  const postTime3 = schedulePosts[2] ?? "15:30";
+  const postTime4 = schedulePosts[3] ?? "18:30";
+  const postTime5 = schedulePosts[4] ?? "21:00";
+  const postTime6 = schedulePosts[5] ?? "23:30";
 
   return (
     <div className="space-y-4">
@@ -148,7 +151,7 @@ export default async function XPage({
                       defaultChecked={settings.autoPostEnabled}
                       className="h-4 w-4 accent-amber-400"
                     />
-                    <span>Auto-post (3/day)</span>
+                    <span>Auto-post (up to 6/day)</span>
                   </label>
                   <label className="flex items-center gap-3 text-sm">
                     <input
@@ -243,6 +246,33 @@ export default async function XPage({
                       defaultValue={postTime3}
                       className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
                       placeholder="21:30"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 4 (ET)</div>
+                    <input
+                      name="postTime4"
+                      defaultValue={postTime4}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="18:30"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 5 (ET)</div>
+                    <input
+                      name="postTime5"
+                      defaultValue={postTime5}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="21:00"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1 text-xs text-white/60">Post time 6 (ET)</div>
+                    <input
+                      name="postTime6"
+                      defaultValue={postTime6}
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      placeholder="23:30"
                     />
                   </label>
                 </div>

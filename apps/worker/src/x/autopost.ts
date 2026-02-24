@@ -8,6 +8,8 @@ type AutoPostResult =
   | { status: "skipped"; reason: string }
   | { status: "posted"; slot: string; xId?: string };
 
+const DEFAULT_POST_SCHEDULE = ["10:00", "12:30", "15:30", "18:30", "21:00", "23:30"];
+
 function pickFrom<T>(items: T[], seed: number): T {
   const idx = Math.abs(seed) % items.length;
   return items[idx]!;
@@ -19,15 +21,32 @@ function clampText(text: string, max = 275): string {
   return t.slice(0, max - 1).trimEnd() + "…";
 }
 
-function buildPostText(args: { slotIndex: number; daySeed: number; disclaimer: string }) {
-  const depositMethods = [
-    "Cash App",
-    "Venmo",
-    "Zelle",
-    "PayPal",
-    "Apple Pay",
-    "crypto",
-  ];
+function getPromoSlots(postsPerDay: number): number[] {
+  const n = Math.max(1, Math.min(postsPerDay, 6));
+  if (n >= 6) return [0, 3];
+  if (n === 5) return [0, 3];
+  if (n === 4) return [0, 2];
+  return [0];
+}
+
+function makeSoftCta(args: { daySeed: number; slotIndex: number }): string {
+  return pickFrom(
+    [
+      "If you need the signup link, DM LINK.",
+      "Want the signup link? DM LINK.",
+      "DM LINK if you want the signup link + bonus info.",
+    ],
+    args.daySeed + args.slotIndex * 101,
+  );
+}
+
+function buildPostText(args: {
+  slotIndex: number;
+  daySeed: number;
+  disclaimer: string;
+  postsPerDay: number;
+}): string {
+  const depositMethods = ["Cash App", "Venmo", "Zelle", "PayPal", "Apple Pay", "crypto"];
 
   const methodsLine = pickFrom(
     [
@@ -47,11 +66,11 @@ function buildPostText(args: { slotIndex: number; daySeed: number; disclaimer: s
     args.daySeed + args.slotIndex * 31,
   );
 
-  const cta = pickFrom(
+  const promoCta = pickFrom(
     [
       "Reply LINK for the signup link + bonus details.",
       "Reply LINK for signup + bonus info.",
-      "Reply LINK and we’ll send the signup link.",
+      "Reply LINK and we'll send the signup link.",
     ],
     args.daySeed + args.slotIndex * 41,
   );
@@ -60,14 +79,14 @@ function buildPostText(args: { slotIndex: number; daySeed: number; disclaimer: s
     [
       "Quick reminder: manage bankroll like a business—size bets, track results, avoid chasing.",
       "Best bettors stay consistent: track units, shop lines, and avoid tilt.",
-      "If you’re betting weekly: focus on process (not one-game outcomes).",
+      "If you're betting weekly: focus on process (not one-game outcomes).",
     ],
     args.daySeed + args.slotIndex * 23,
   );
 
   const community = pickFrom(
     [
-      "What’s your favorite market tonight—spread, total, props, or parlays?",
+      "What's your favorite market tonight—spread, total, props, or parlays?",
       "Are you betting props or sides today?",
       "What are you watching tonight? (NFL/NBA/MLB/NHL/other)",
     ],
@@ -76,23 +95,29 @@ function buildPostText(args: { slotIndex: number; daySeed: number; disclaimer: s
 
   const footer = args.disclaimer ? `\n\n${args.disclaimer}` : "";
 
-  if (args.slotIndex === 0) {
-    return clampText(`${promoLine} ${methodsLine} ${cta}${footer}`);
+  const promoSlots = getPromoSlots(args.postsPerDay);
+  const isPromo = promoSlots.includes(args.slotIndex);
+
+  if (isPromo) {
+    return clampText(`${promoLine} ${methodsLine} ${promoCta}${footer}`);
   }
-  if (args.slotIndex === 1) {
-    return clampText(`${education} ${promoLine} ${cta}${footer}`);
-  }
-  return clampText(`${community} ${cta}${footer}`);
+
+  const softCta = makeSoftCta({ daySeed: args.daySeed, slotIndex: args.slotIndex });
+  const variant = args.slotIndex % 3;
+  if (variant === 0) return clampText(`${education} ${softCta}${footer}`);
+  if (variant === 1) return clampText(`${community} ${softCta}${footer}`);
+  return clampText(`${education} ${community} ${softCta}${footer}`);
 }
 
 function parsePostSchedule(schedule: unknown): string[] {
-  if (!schedule || typeof schedule !== "object") return ["11:00", "16:00", "21:30"];
+  if (!schedule || typeof schedule !== "object") return DEFAULT_POST_SCHEDULE;
   const posts = (schedule as { posts?: unknown }).posts;
-  if (!Array.isArray(posts)) return ["11:00", "16:00", "21:30"];
-  return posts
+  if (!Array.isArray(posts)) return DEFAULT_POST_SCHEDULE;
+  const parsed = posts
     .map((x: unknown) => String(x ?? "").trim())
     .filter((x: string) => /^\d{2}:\d{2}$/.test(x))
-    .slice(0, 3);
+    .slice(0, 6);
+  return parsed.length ? parsed : DEFAULT_POST_SCHEDULE;
 }
 
 export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostResult> {
@@ -105,10 +130,11 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
       autoPostEnabled: false,
       autoReplyEnabled: false,
       outboundEnabled: false,
-      maxPostsPerDay: 3,
+      maxPostsPerDay: 6,
       maxAutoRepliesPerDay: 60,
-      maxOutboundRepliesPerDay: 10,
-      schedule: { posts: ["11:00", "16:00", "21:30"] },
+      maxOutboundRepliesPerDay: 200,
+      maxOutboundRepliesPerRun: 10,
+      schedule: { posts: DEFAULT_POST_SCHEDULE },
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
     select: {
@@ -143,6 +169,8 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
   const slots = parsePostSchedule(settings.schedule);
   if (!slots.length) return { status: "skipped", reason: "no_slots_configured" };
 
+  const postsPerDayPlanned = Math.max(1, Math.min(settings.maxPostsPerDay, slots.length, 6));
+
   // Find earliest missed slot for today that hasn't been posted.
   for (let i = 0; i < slots.length; i += 1) {
     const slot = slots[i]!;
@@ -164,7 +192,7 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
     const disclaimer =
       (settings.disclaimerText && String(settings.disclaimerText).trim()) ||
       "21+ | Terms apply | Gamble responsibly";
-    const text = buildPostText({ slotIndex: i, daySeed, disclaimer });
+    const text = buildPostText({ slotIndex: i, daySeed, disclaimer, postsPerDay: postsPerDayPlanned });
 
     if (args.dryRun) {
       await prisma.xActionLog.create({
@@ -233,3 +261,4 @@ export async function runAutoPost(args: { dryRun: boolean }): Promise<AutoPostRe
 
   return { status: "skipped", reason: "no_due_slot" };
 }
+

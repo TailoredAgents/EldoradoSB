@@ -90,3 +90,16 @@ export function startOfDayApp(date: Date, timeZone = getAppTimeZone()): Date {
   return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day }, timeZone);
 }
 
+// Converts YYYY-MM-DD into the UTC instant representing midnight in the app's timezone.
+export function startOfDayYmdApp(ymd: string, timeZone = getAppTimeZone()): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
+  if (!m) throw new Error("invalid date");
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) throw new Error("invalid date");
+  if (month < 1 || month > 12) throw new Error("invalid date");
+  if (day < 1 || day > 31) throw new Error("invalid date");
+  return zonedTimeToUtc({ year, month, day }, timeZone);
+}
+

@@ -1,5 +1,6 @@
 import { prisma } from "@el-dorado/db";
 import Link from "next/link";
+import { upsertWeeklyDepositResultAction } from "./serverActions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,141 @@ function daysAgoUtc(days: number): Date {
 export default async function ReportsPage() {
   const since7 = daysAgoUtc(7);
   const since30 = daysAgoUtc(30);
+
+  const isObj = (x: unknown): x is Record<string, unknown> => Boolean(x) && typeof x === "object";
+  const metaString = (meta: unknown, key: string): string | null => {
+    if (!isObj(meta)) return null;
+    const v = meta[key];
+    return typeof v === "string" ? v : null;
+  };
+
+  const xSettings = await prisma.xAccountSettings.findUnique({
+    where: { id: 1 },
+    select: {
+      linkTokenDefault: true,
+      linkTokenPayout: true,
+      linkTokenPicks: true,
+      linkTokenGen: true,
+    },
+  });
+
+  const xTierTokens = {
+    default: xSettings?.linkTokenDefault ?? null,
+    payout_reviews: xSettings?.linkTokenPayout ?? null,
+    picks_parlays: xSettings?.linkTokenPicks ?? null,
+    general: xSettings?.linkTokenGen ?? null,
+  } as const;
+
+  const trackedTokens = Array.from(
+    new Set(Object.values(xTierTokens).filter((t): t is string => Boolean(t))),
+  );
+
+  const trackedLinks = trackedTokens.length
+    ? await prisma.trackingLink.findMany({
+        where: { token: { in: trackedTokens } },
+        select: { id: true, token: true, label: true },
+      })
+    : [];
+  const trackedLinkIdByToken = new Map(trackedLinks.map((l) => [l.token, l.id]));
+
+  const trackedLinkIds = trackedLinks.map((l) => l.id);
+  const trackedClicks30 = trackedLinkIds.length
+    ? await prisma.clickEvent.groupBy({
+        by: ["trackingLinkId"],
+        where: { createdAt: { gte: since30 }, trackingLinkId: { in: trackedLinkIds } },
+        _count: { _all: true },
+      })
+    : [];
+  const trackedClicks7 = trackedLinkIds.length
+    ? await prisma.clickEvent.groupBy({
+        by: ["trackingLinkId"],
+        where: { createdAt: { gte: since7 }, trackingLinkId: { in: trackedLinkIds } },
+        _count: { _all: true },
+      })
+    : [];
+
+  const clicks30ByTrackedLink = new Map(trackedClicks30.map((r) => [r.trackingLinkId, r._count._all]));
+  const clicks7ByTrackedLink = new Map(trackedClicks7.map((r) => [r.trackingLinkId, r._count._all]));
+
+  const outboundLogs30 = await prisma.xActionLog.findMany({
+    where: { createdAt: { gte: since30 }, actionType: "outbound_comment" },
+    orderBy: { createdAt: "desc" },
+    take: 10000,
+    select: { createdAt: true, status: true, meta: true, reason: true },
+  });
+
+  const inboundDmLogs30 = await prisma.xActionLog.findMany({
+    where: { createdAt: { gte: since30 }, actionType: "dm" },
+    orderBy: { createdAt: "desc" },
+    take: 10000,
+    select: { createdAt: true, status: true, meta: true, reason: true },
+  });
+
+  const outboundSuccess30 = outboundLogs30.filter((r) => r.status === "success");
+
+  const outboundByTier30 = new Map<string, number>();
+  const outboundByTier7 = new Map<string, number>();
+  const outboundByTierQuery30 = new Map<string, number>();
+
+  for (const r of outboundSuccess30) {
+    const tier = metaString(r.meta, "tier") ?? (r.reason?.replace(/^outbound:/, "") ?? "unknown");
+    outboundByTier30.set(tier, (outboundByTier30.get(tier) ?? 0) + 1);
+
+    if (r.createdAt >= since7) outboundByTier7.set(tier, (outboundByTier7.get(tier) ?? 0) + 1);
+
+    const query = metaString(r.meta, "query") ?? "unknown";
+    outboundByTierQuery30.set(`${tier}::${query}`, (outboundByTierQuery30.get(`${tier}::${query}`) ?? 0) + 1);
+  }
+
+  const dmSuccess30 = inboundDmLogs30.filter((r) => r.status === "success");
+  const linkDmSuccess30 = dmSuccess30.filter((r) => metaString(r.meta, "intent") === "link");
+
+  const linkRequestsByBucket30 = new Map<string, number>();
+  const linkRequestsByBucket7 = new Map<string, number>();
+  for (const r of linkDmSuccess30) {
+    const bucket = metaString(r.meta, "linkBucket") ?? "unknown";
+    linkRequestsByBucket30.set(bucket, (linkRequestsByBucket30.get(bucket) ?? 0) + 1);
+    if (r.createdAt >= since7) linkRequestsByBucket7.set(bucket, (linkRequestsByBucket7.get(bucket) ?? 0) + 1);
+  }
+
+  const getTrackedClicks = (token: string | null): { clicks7: number; clicks30: number } => {
+    if (!token) return { clicks7: 0, clicks30: 0 };
+    const linkId = trackedLinkIdByToken.get(token);
+    if (!linkId) return { clicks7: 0, clicks30: 0 };
+    return {
+      clicks7: clicks7ByTrackedLink.get(linkId) ?? 0,
+      clicks30: clicks30ByTrackedLink.get(linkId) ?? 0,
+    };
+  };
+
+  const topOutboundQueries30 = Array.from(outboundByTierQuery30.entries())
+    .map(([key, count]) => {
+      const idx = key.indexOf("::");
+      const tier = idx >= 0 ? key.slice(0, idx) : key;
+      const query = idx >= 0 ? key.slice(idx + 2) : "unknown";
+      return { tier, query, count };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+
+  const depositorFunnelRows = [
+    { key: "payout_reviews", label: "Payout/cashout reviews", token: xTierTokens.payout_reviews },
+    { key: "picks_parlays", label: "Picks/parlays/props", token: xTierTokens.picks_parlays },
+    { key: "general", label: "General sportsbook chatter", token: xTierTokens.general },
+    { key: "default", label: "Default LINK (no code)", token: xTierTokens.default },
+  ] as const;
+
+  const weeklyDepositResults = await prisma.weeklyDepositResult.findMany({
+    orderBy: { weekStart: "desc" },
+    take: 30,
+    include: { campaign: { select: { id: true, name: true, type: true } } },
+  });
+
+  const campaigns = await prisma.campaign.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, type: true },
+  });
 
   const weeklyResults30 = await prisma.outreachEvent.groupBy({
     by: ["prospectId"],
@@ -159,6 +295,247 @@ export default async function ReportsPage() {
         >
           Outreach Today →
         </Link>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-white/60">Depositor funnel (X)</div>
+            <div className="mt-1 text-xs text-white/50">
+              Outbound comments â†’ inbound LINK DMs â†’ tracked clicks (7d / 30d).
+            </div>
+          </div>
+          <Link
+            href="/x"
+            className="rounded-md bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+          >
+            X settings â†’
+          </Link>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+              <tr>
+                <th className="px-3 py-2 text-left">Bucket</th>
+                <th className="px-3 py-2 text-right">Outbound (7d)</th>
+                <th className="px-3 py-2 text-right">Outbound (30d)</th>
+                <th className="px-3 py-2 text-right">LINK DMs (7d)</th>
+                <th className="px-3 py-2 text-right">LINK DMs (30d)</th>
+                <th className="px-3 py-2 text-right">Clicks (7d)</th>
+                <th className="px-3 py-2 text-right">Clicks (30d)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {depositorFunnelRows.map((row) => {
+                const outbound7 = outboundByTier7.get(row.key) ?? 0;
+                const outbound30 = outboundByTier30.get(row.key) ?? 0;
+                const link7 = linkRequestsByBucket7.get(row.key) ?? 0;
+                const link30 = linkRequestsByBucket30.get(row.key) ?? 0;
+                const clicks = getTrackedClicks(row.token);
+                return (
+                  <tr key={row.key} className="hover:bg-white/5">
+                    <td className="px-3 py-2 text-white/80">{row.label}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{outbound7}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{outbound30}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{link7}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{link30}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{clicks.clicks7}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{clicks.clicks30}</td>
+                  </tr>
+                );
+              })}
+              <tr className="hover:bg-white/5">
+                <td className="px-3 py-2 text-white/80">Untracked (no publicBaseUrl)</td>
+                <td className="px-3 py-2 text-right tabular-nums">â€”</td>
+                <td className="px-3 py-2 text-right tabular-nums">â€”</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {linkRequestsByBucket7.get("untracked") ?? 0}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {linkRequestsByBucket30.get("untracked") ?? 0}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">0</td>
+                <td className="px-3 py-2 text-right tabular-nums">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-2 text-xs text-white/50">
+          Outbound replies ask for <span className="font-mono">LINK PAYOUT</span>,{" "}
+          <span className="font-mono">LINK PICKS</span>, or <span className="font-mono">LINK GEN</span> so you can attribute results.
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="text-xs uppercase tracking-wide text-white/60">Top outbound queries (30d)</div>
+        <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+              <tr>
+                <th className="px-3 py-2 text-left">Tier</th>
+                <th className="px-3 py-2 text-left">Query</th>
+                <th className="px-3 py-2 text-right">Replies</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {topOutboundQueries30.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-white/60" colSpan={3}>
+                    No outbound replies yet.
+                  </td>
+                </tr>
+              ) : (
+                topOutboundQueries30.map((q, idx) => (
+                  <tr key={`${q.tier}-${idx}`} className="hover:bg-white/5">
+                    <td className="px-3 py-2 font-mono text-xs text-white/80">{q.tier}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-white/70">{q.query}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{q.count}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="text-xs uppercase tracking-wide text-white/60">Manual weekly deposits</div>
+        <div className="mt-2 text-xs text-white/50">
+          Until provider attribution exists, log weekly deposits here by tier or by campaign.
+        </div>
+
+        <form action={upsertWeeklyDepositResultAction} className="mt-3 grid gap-3 md:grid-cols-6">
+          <label className="block md:col-span-2">
+            <div className="mb-1 text-xs text-white/60">Week start (ET)</div>
+            <input
+              name="weekStart"
+              type="date"
+              defaultValue={new Date().toISOString().slice(0, 10)}
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              required
+            />
+          </label>
+
+          <label className="block">
+            <div className="mb-1 text-xs text-white/60">Bucket</div>
+            <select
+              name="bucket"
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              defaultValue="tier"
+            >
+              <option value="tier">Tier</option>
+              <option value="campaign">Campaign</option>
+            </select>
+          </label>
+
+          <label className="block md:col-span-1">
+            <div className="mb-1 text-xs text-white/60">Tier (if bucket=tier)</div>
+            <select
+              name="tier"
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              defaultValue="payout_reviews"
+            >
+              <option value="payout_reviews">payout_reviews</option>
+              <option value="picks_parlays">picks_parlays</option>
+              <option value="general">general</option>
+              <option value="default">default</option>
+            </select>
+          </label>
+
+          <label className="block md:col-span-2">
+            <div className="mb-1 text-xs text-white/60">Campaign (if bucket=campaign)</div>
+            <select
+              name="campaignId"
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              defaultValue=""
+            >
+              <option value="">â€”</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.type})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <div className="mb-1 text-xs text-white/60">Depositors</div>
+            <input
+              name="depositors"
+              type="number"
+              min={0}
+              max={100000}
+              defaultValue={0}
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              required
+            />
+          </label>
+
+          <label className="block">
+            <div className="mb-1 text-xs text-white/60">Deposits ($)</div>
+            <input
+              name="depositsUsd"
+              type="number"
+              min={0}
+              step="0.01"
+              defaultValue={0}
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+              required
+            />
+          </label>
+
+          <label className="block md:col-span-4">
+            <div className="mb-1 text-xs text-white/60">Notes (optional)</div>
+            <input
+              name="notes"
+              placeholder="e.g. pulled from provider dashboard"
+              className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+            />
+          </label>
+
+          <div className="flex items-end md:col-span-2">
+            <button className="w-full rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+              Save weekly result
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-4 overflow-hidden rounded-lg border border-white/10">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+              <tr>
+                <th className="px-3 py-2 text-left">Week</th>
+                <th className="px-3 py-2 text-left">Tier</th>
+                <th className="px-3 py-2 text-left">Campaign</th>
+                <th className="px-3 py-2 text-right">Depositors</th>
+                <th className="px-3 py-2 text-right">Deposits ($)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {weeklyDepositResults.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-white/60" colSpan={5}>
+                    No manual weekly deposits logged yet.
+                  </td>
+                </tr>
+              ) : (
+                weeklyDepositResults.map((r) => (
+                  <tr key={r.id} className="hover:bg-white/5">
+                    <td className="px-3 py-2 font-mono text-xs text-white/80">
+                      {new Date(r.weekStart).toISOString().slice(0, 10)}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-white/70">{r.tier ?? "â€”"}</td>
+                    <td className="px-3 py-2 text-white/70">{r.campaign?.name ?? "â€”"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.depositors}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.depositsUsd.toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

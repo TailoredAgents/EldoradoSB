@@ -66,9 +66,12 @@ function isHighIntentDepositor(text: string): boolean {
 function buildReply(args: { tier: Tier; tweetText: string; disclaimer: string; daySeed: number }): string {
   const footer = args.disclaimer ? ` ${args.disclaimer}` : "";
 
+  const linkCode =
+    args.tier === "payout_reviews" ? "LINK PAYOUT" : args.tier === "picks_parlays" ? "LINK PICKS" : "LINK GEN";
+
   const linkCta = isHighIntentDepositor(args.tweetText)
-    ? "If you want a 200% deposit match (Free Play bonus), DM us LINK and we'll send the signup link."
-    : "If you're looking for a 200% deposit match (Free Play bonus), DM us LINK for the signup link.";
+    ? `If you want a 200% deposit match (Free Play bonus), DM us ${linkCode} and we'll send the signup link.`
+    : `If you're looking for a 200% deposit match (Free Play bonus), DM us ${linkCode} for the signup link.`;
 
   if (args.tier === "payout_reviews") {
     const opener = pickFrom(

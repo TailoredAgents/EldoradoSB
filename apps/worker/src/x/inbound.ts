@@ -52,6 +52,17 @@ function isAmbassadorIntent(text: string): boolean {
   return t.includes("ambassador") || t.includes("revshare") || t.includes("rev share") || t.includes("partner");
 }
 
+type LinkCode = "payout" | "picks" | "gen";
+
+function parseLinkCode(text: string): LinkCode | null {
+  const t = normalize(text);
+  const m = /\blink\s+(payout|picks|gen)\b/.exec(t);
+  if (!m) return null;
+  const code = m[1];
+  if (code === "payout" || code === "picks" || code === "gen") return code;
+  return null;
+}
+
 function defaultDisclaimer(text: string | null | undefined): string {
   const t = String(text ?? "").trim();
   return t || "21+ | Terms apply | Gamble responsibly";
@@ -67,7 +78,7 @@ function makeLinkMessage(args: { url: string; disclaimer: string }): string {
 
 function makeMenuMessage(args: { disclaimer: string }): string {
   return clampText(
-    `Thanks for reaching out.\n\nReply with:\n- LINK (signup link + bonus)\n- AMBASSADOR (revshare partnership)\n- SUPPORT (help)\n\n${args.disclaimer}`,
+    `Thanks for reaching out.\n\nReply with:\n- LINK PAYOUT (signup link + bonus)\n- LINK PICKS (signup link + bonus)\n- LINK GEN (signup link + bonus)\n- AMBASSADOR (revshare partnership)\n- SUPPORT (help)\n\n${args.disclaimer}`,
     900,
   );
 }
@@ -80,7 +91,7 @@ function makeAmbassadorQuestions(args: { disclaimer: string }): string {
 }
 
 async function getOrCreateDefaultCampaignId(): Promise<string> {
-  const name = "Default - LINK replies";
+  const name = "X - LINK replies";
   const existing = await prisma.campaign.findFirst({
     where: { name },
     select: { id: true },
@@ -97,13 +108,13 @@ function randomToken(bytes = 16): string {
   return crypto.randomBytes(bytes).toString("base64url");
 }
 
-async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl: string; label: string }) {
+async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl: string; label: string; token?: string | null }) {
   const baseUrl = args.baseUrl ? args.baseUrl.replace(/\/+$/, "") : null;
   if (!baseUrl) return args.destinationUrl;
 
   const campaignId = await getOrCreateDefaultCampaignId();
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const token = randomToken(16);
+    const token = args.token ? String(args.token).trim() : randomToken(16);
     try {
       await prisma.trackingLink.create({
         data: {
@@ -121,6 +132,82 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
     }
   }
   return args.destinationUrl;
+}
+
+async function ensureTierLinkUrl(args: {
+  baseUrl: string | null;
+  settingsId: number;
+  destinationUrl: string;
+  code: LinkCode | null;
+  linkTokenDefault: string | null;
+  linkTokenPayout: string | null;
+  linkTokenPicks: string | null;
+  linkTokenGen: string | null;
+}): Promise<{ url: string; token: string | null; bucket: string }> {
+  const baseUrl = args.baseUrl ? args.baseUrl.replace(/\/+$/, "") : null;
+  if (!baseUrl) return { url: args.destinationUrl, token: null, bucket: "untracked" };
+
+  const bucket =
+    args.code === "payout"
+      ? "payout_reviews"
+      : args.code === "picks"
+        ? "picks_parlays"
+        : args.code === "gen"
+          ? "general"
+          : "default";
+
+  const field =
+    args.code === "payout"
+      ? "linkTokenPayout"
+      : args.code === "picks"
+        ? "linkTokenPicks"
+        : args.code === "gen"
+          ? "linkTokenGen"
+          : "linkTokenDefault";
+
+  const existingToken =
+    field === "linkTokenPayout"
+      ? args.linkTokenPayout
+      : field === "linkTokenPicks"
+        ? args.linkTokenPicks
+        : field === "linkTokenGen"
+          ? args.linkTokenGen
+          : args.linkTokenDefault;
+
+  let token = existingToken ? String(existingToken).trim() : null;
+
+  if (!token) {
+    token = randomToken(16);
+    await prisma.xAccountSettings.update({
+      where: { id: args.settingsId },
+      data: { [field]: token } as unknown as Prisma.XAccountSettingsUpdateInput,
+      select: { id: true },
+    });
+  }
+
+  // Ensure the tracking link exists for this token (idempotent).
+  const existingLink = await prisma.trackingLink.findUnique({
+    where: { token },
+    select: { id: true },
+  });
+  if (!existingLink) {
+    const campaignId = await getOrCreateDefaultCampaignId();
+    try {
+      await prisma.trackingLink.create({
+        data: {
+          campaignId,
+          token,
+          destinationUrl: args.destinationUrl,
+          label: `x_link:${bucket}`,
+          active: true,
+        },
+      });
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+    }
+  }
+
+  return { url: `${baseUrl}/r/${token}`, token, bucket };
 }
 
 async function countAutoRepliesToday(args: { dayStart: Date; dayEnd: Date }) {
@@ -144,6 +231,10 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       autoReplyEnabled: false,
       outboundEnabled: false,
       publicBaseUrl: null,
+      linkTokenDefault: null,
+      linkTokenPayout: null,
+      linkTokenPicks: null,
+      linkTokenGen: null,
       maxPostsPerDay: 3,
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
@@ -152,11 +243,16 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
     select: {
+      id: true,
       enabled: true,
       autoReplyEnabled: true,
       maxAutoRepliesPerDay: true,
       disclaimerText: true,
       publicBaseUrl: true,
+      linkTokenDefault: true,
+      linkTokenPayout: true,
+      linkTokenPicks: true,
+      linkTokenGen: true,
     },
   });
 
@@ -196,6 +292,11 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     select: { lastMentionId: true, lastDmEventId: true },
   });
 
+  let linkTokenDefault = settings.linkTokenDefault;
+  let linkTokenPayout = settings.linkTokenPayout;
+  let linkTokenPicks = settings.linkTokenPicks;
+  let linkTokenGen = settings.linkTokenGen;
+
   let repliesSent = 0;
   let dmsSent = 0;
   let postsRead = 0;
@@ -225,14 +326,10 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       if (!isLinkIntent(text) && !isAmbassadorIntent(text)) continue;
 
       const daySeed = Number(dayStart.getTime() / 1000) + t.id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-      const baseUrl = settings.publicBaseUrl ?? null;
-      const linkUrl = await createTrackingUrl({
-        baseUrl,
-        destinationUrl: "https://eldoradosb.com/",
-        label: `mention:${t.id}`,
-      });
+      const intent = isLinkIntent(text) ? "link" : "ambassador";
+      const linkUrl = "https://eldoradosb.com/";
 
-      const replyText = isLinkIntent(text)
+      const replyTextLegacy = isLinkIntent(text)
         ? makeLinkMessage({ url: linkUrl, disclaimer })
         : clampText(
             `${pickFrom(
@@ -245,13 +342,22 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
             275,
           );
 
+      const replyText =
+        intent === "link"
+          ? clampText(
+              `DM us LINK and we'll send the signup link + 200% deposit match (Free Play bonus). ${disclaimer}`,
+              275,
+            )
+          : clampText(`For ambassador partnership info, DM us AMBASSADOR. ${disclaimer}`, 275);
+      void replyTextLegacy;
+
       if (args.dryRun) {
         await prisma.xActionLog.create({
           data: {
             actionType: XActionType.reply,
             status: XActionStatus.skipped,
             reason: "auto_reply:dry_run",
-            meta: { sourceTweetId: t.id, replyText },
+            meta: { sourceTweetId: t.id, replyText, intent },
           },
         });
         continue;
@@ -276,7 +382,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
             status: XActionStatus.success,
             reason: "auto_reply:mention",
             xId: posted.id ?? null,
-            meta: { sourceTweetId: t.id, replyText, linkUrl },
+            meta: { sourceTweetId: t.id, replyText, intent },
           },
         });
 
@@ -290,7 +396,12 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               actionType: XActionType.reply,
               status: XActionStatus.error,
               reason: "auto_reply:mention_error",
-              meta: { sourceTweetId: t.id, replyText, message: err instanceof Error ? err.message : String(err) },
+              meta: {
+                sourceTweetId: t.id,
+                replyText,
+                intent,
+                message: err instanceof Error ? err.message : String(err),
+              },
             },
           });
         } catch {
@@ -319,17 +430,43 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       if (!event.id || !event.sender_id || !event.text) continue;
       if (event.sender_id === meUser.id) continue;
 
-      const linkUrl = await createTrackingUrl({
-        baseUrl: settings.publicBaseUrl ?? null,
-        destinationUrl: "https://eldoradosb.com/",
-        label: `dm:${event.id}`,
-      });
-
-      const msg = isLinkIntent(event.text)
-        ? makeLinkMessage({ url: linkUrl, disclaimer })
+      const destinationUrl = "https://eldoradosb.com/";
+      const intent = isLinkIntent(event.text)
+        ? "link"
         : isAmbassadorIntent(event.text)
-          ? makeAmbassadorQuestions({ disclaimer })
-          : makeMenuMessage({ disclaimer });
+          ? "ambassador"
+          : "menu";
+
+      const linkCode = intent === "link" ? parseLinkCode(event.text) : null;
+      const link =
+        intent === "link"
+          ? await ensureTierLinkUrl({
+              baseUrl: settings.publicBaseUrl ?? null,
+              settingsId: settings.id,
+              destinationUrl,
+              code: linkCode,
+              linkTokenDefault,
+              linkTokenPayout,
+              linkTokenPicks,
+              linkTokenGen,
+            })
+          : { url: destinationUrl, token: null, bucket: "none" };
+
+      if (intent === "link" && link.token) {
+        if (linkCode === "payout") linkTokenPayout = link.token;
+        else if (linkCode === "picks") linkTokenPicks = link.token;
+        else if (linkCode === "gen") linkTokenGen = link.token;
+        else linkTokenDefault = link.token;
+      }
+
+      const linkUrl = intent === "link" ? link.url : null;
+
+      const msg =
+        intent === "link"
+          ? makeLinkMessage({ url: link.url, disclaimer })
+          : intent === "ambassador"
+            ? makeAmbassadorQuestions({ disclaimer })
+            : makeMenuMessage({ disclaimer });
 
       if (args.dryRun) {
         await prisma.xActionLog.create({
@@ -337,7 +474,15 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
             actionType: XActionType.dm,
             status: XActionStatus.skipped,
             reason: "auto_reply:dry_run",
-            meta: { sourceDmEventId: event.id, targetUserId: event.sender_id, msg },
+            meta: {
+              sourceDmEventId: event.id,
+              targetUserId: event.sender_id,
+              intent,
+              linkCode,
+              linkBucket: link.bucket,
+              linkUrl,
+              msg,
+            },
           },
         });
         continue;
@@ -362,7 +507,15 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
             status: XActionStatus.success,
             reason: "auto_reply:dm",
             xId: sent.data?.dm_event_id ?? null,
-            meta: { sourceDmEventId: event.id, targetUserId: event.sender_id, msg, linkUrl },
+            meta: {
+              sourceDmEventId: event.id,
+              targetUserId: event.sender_id,
+              intent,
+              linkCode,
+              linkBucket: link.bucket,
+              linkUrl,
+              msg,
+            },
           },
         });
 
@@ -379,6 +532,10 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               meta: {
                 sourceDmEventId: event.id,
                 targetUserId: event.sender_id,
+                intent,
+                linkCode,
+                linkBucket: link.bucket,
+                linkUrl,
                 msg,
                 message: err instanceof Error ? err.message : String(err),
               },

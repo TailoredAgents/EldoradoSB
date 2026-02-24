@@ -311,6 +311,51 @@ export default async function XPage({
                 </div>
 
                 <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-white/60">Tracked LINK tokens (optional)</div>
+                  <div className="mt-2 text-xs text-white/50">
+                    Used to attribute inbound DM <span className="font-mono">LINK</span> requests and clicks by tier. Leave blank to let the worker auto-create.
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">Default token</div>
+                      <input
+                        name="linkTokenDefault"
+                        defaultValue={settings.linkTokenDefault ?? ""}
+                        placeholder="auto"
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">PAYOUT token</div>
+                      <input
+                        name="linkTokenPayout"
+                        defaultValue={settings.linkTokenPayout ?? ""}
+                        placeholder="auto"
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">PICKS token</div>
+                      <input
+                        name="linkTokenPicks"
+                        defaultValue={settings.linkTokenPicks ?? ""}
+                        placeholder="auto"
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">GEN token</div>
+                      <input
+                        name="linkTokenGen"
+                        defaultValue={settings.linkTokenGen ?? ""}
+                        placeholder="auto"
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
                   <div className="text-xs uppercase tracking-wide text-white/60">Disclaimer</div>
                   <textarea
                     name="disclaimerText"

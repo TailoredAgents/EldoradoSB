@@ -254,6 +254,7 @@ model Campaign {
   active Boolean      @default(true)
 
   trackingLinks TrackingLink[]
+  weeklyDepositResults WeeklyDepositResult[]
 }
 
 model TrackingLink {
@@ -312,6 +313,13 @@ model XAccountSettings {
 
   publicBaseUrl String?
 
+  // Optional: stable tracked-link tokens to attribute DM "LINK" requests and clicks by tier.
+  // When publicBaseUrl is set, inbound auto-replies can send ${publicBaseUrl}/r/${token}.
+  linkTokenDefault String?
+  linkTokenPayout  String?
+  linkTokenPicks   String?
+  linkTokenGen     String?
+
   maxPostsPerDay          Int @default(3)
   maxAutoRepliesPerDay    Int @default(60)
   maxOutboundRepliesPerDay Int @default(10)
@@ -324,6 +332,31 @@ model XAccountSettings {
   schedule Json?
 
   disclaimerText String?
+}
+
+model WeeklyDepositResult {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Week start date (stored in UTC; treat as ET week buckets in UI).
+  weekStart DateTime
+
+  // Attribution bucket. Set either tier or campaignId.
+  tier String?
+
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId String?
+
+  depositors  Int   @default(0)
+  depositsUsd Float @default(0)
+
+  notes String?
+
+  @@index([weekStart])
+  @@index([tier])
+  @@index([campaignId])
+  @@unique([weekStart, tier, campaignId])
 }
 
 model XActionLog {

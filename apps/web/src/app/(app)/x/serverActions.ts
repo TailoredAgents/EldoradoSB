@@ -151,6 +151,14 @@ function parseOptionalInt(value: FormDataEntryValue | null): number | null {
   return num;
 }
 
+function parseOptionalToken(value: FormDataEntryValue | null): string | null {
+  const str = String(value ?? "").trim();
+  if (!str) return null;
+  // base64url-ish tokens (we generate these). Allow small manual tokens too.
+  if (!/^[A-Za-z0-9_-]{6,128}$/.test(str)) throw new Error("invalid token");
+  return str;
+}
+
 function parseTimeHHMM(value: FormDataEntryValue | null, fallback: string): string {
   const str = String(value ?? "").trim();
   if (!str) return fallback;
@@ -171,6 +179,11 @@ export async function updateXAccountSettingsAction(formData: FormData) {
 
     const publicBaseUrlRaw = String(formData.get("publicBaseUrl") ?? "").trim() || null;
     const publicBaseUrl = publicBaseUrlRaw ? publicBaseUrlRaw.replace(/\/+$/, "") : null;
+
+    const linkTokenDefault = parseOptionalToken(formData.get("linkTokenDefault"));
+    const linkTokenPayout = parseOptionalToken(formData.get("linkTokenPayout"));
+    const linkTokenPicks = parseOptionalToken(formData.get("linkTokenPicks"));
+    const linkTokenGen = parseOptionalToken(formData.get("linkTokenGen"));
 
     const maxPostsPerDay = parseIntStrict(formData.get("maxPostsPerDay"));
     const maxAutoRepliesPerDay = parseIntStrict(formData.get("maxAutoRepliesPerDay"));
@@ -209,6 +222,10 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         autoReplyEnabled,
         outboundEnabled,
         publicBaseUrl,
+        linkTokenDefault,
+        linkTokenPayout,
+        linkTokenPicks,
+        linkTokenGen,
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
@@ -224,6 +241,10 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         autoReplyEnabled,
         outboundEnabled,
         publicBaseUrl,
+        linkTokenDefault,
+        linkTokenPayout,
+        linkTokenPicks,
+        linkTokenGen,
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,

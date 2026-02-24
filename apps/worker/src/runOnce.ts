@@ -180,7 +180,8 @@ export async function runOnce(options: RunOptions) {
     let xInbound: Prisma.InputJsonValue | null = null;
     let inboundPostReads = 0;
     try {
-      const inboundReadBudget = Math.min(10, remainingThisRun);
+      // Depositor-first: prioritize outbound prospecting reads; keep inbound mentions scanning lightweight.
+      const inboundReadBudget = Math.min(5, remainingThisRun);
       const inRes = await runInboundAutoReply({
         dryRun: options.dryRun,
         readBudget: inboundReadBudget,
@@ -211,14 +212,15 @@ export async function runOnce(options: RunOptions) {
     let xOutbound: Prisma.InputJsonValue | null = null;
     let outboundPostReads = 0;
     try {
-      const outboundReadBudget = Math.min(10, remainingThisRun);
+      // Depositor-first: give outbound the remaining read budget so it can find enough targets to reply to.
+      const outboundReadBudget = Math.min(60, remainingThisRun);
       if (outboundReadBudget > 0) {
         const outRes = await runOutboundEngagement({
           dryRun: options.dryRun,
           readBudget: outboundReadBudget,
         });
         xOutbound = outRes as unknown as Prisma.InputJsonValue;
-        if (outRes.status === "replied") outboundPostReads = outRes.postsRead;
+        if ("postsRead" in outRes && typeof outRes.postsRead === "number") outboundPostReads = outRes.postsRead;
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -6,11 +6,11 @@ import { ensureAccessToken } from "./credentials";
 import { replyToTweet } from "./write";
 import { markHandledItemDone, markHandledItemError, reserveHandledItem } from "./handled";
 
-type Track = "depositors" | "ambassadors";
+type Tier = "payout_reviews" | "picks_parlays" | "general";
 
-type OutboundResult =
-  | { status: "skipped"; reason: string }
-  | { status: "replied"; track: Track; targetTweetId: string; replyTweetId?: string; postsRead: number };
+export type OutboundResult =
+  | { status: "skipped"; reason: string; postsRead?: number }
+  | { status: "processed"; tiered: true; repliesSent: number; postsRead: number };
 
 function pickFrom<T>(items: T[], seed: number): T {
   const idx = Math.abs(seed) % items.length;
@@ -23,18 +23,29 @@ function clampText(text: string, max = 275): string {
   return t.slice(0, max - 1).trimEnd() + "…";
 }
 
-function getQueries(track: Track): string[] {
-  if (track === "depositors") {
+function getQueries(tier: Tier): string[] {
+  if (tier === "payout_reviews") {
     return [
-      '(sportsbook OR "where can I bet" OR "betting app" OR "deposit match" OR "free play" OR bonus) lang:en -is:retweet',
-      '(parlay OR SGP OR props OR "player prop") (odds OR line OR "what do you like") lang:en -is:retweet',
-      '("cash app" OR venmo OR zelle OR paypal OR "apple pay" OR crypto) (sportsbook OR betting) lang:en -is:retweet',
+      '(payout OR "got paid" OR "got payed" OR paid OR cashout OR "cashed out" OR withdrew OR withdrawal OR withdraw) (sportsbook OR bookie OR "my book" OR "sports book") is:reply lang:en -is:retweet',
+      '("still waiting" OR "not paid" OR scam OR scammed OR "no payout") (sportsbook OR bookie OR "my book") is:reply lang:en -is:retweet',
+      '(payout OR cashout OR withdrawal OR withdraw) ("cash app" OR venmo OR zelle OR paypal OR "apple pay" OR crypto) is:reply lang:en -is:retweet',
+      '("got paid" OR payout OR cashout) (telegram OR discord) is:reply lang:en -is:retweet',
     ];
   }
+
+  if (tier === "picks_parlays") {
+    return [
+      '(parlay OR SGP OR props OR "player prop" OR odds OR line) ("what do you like" OR "who you got" OR "best bet") is:reply lang:en -is:retweet',
+      '(POTD OR "pick of the day" OR "best bet" OR units) (parlay OR props OR straight) is:reply lang:en -is:retweet',
+      '(VIP OR Discord OR Patreon) (picks OR betting) is:reply lang:en -is:retweet',
+      '(parlay OR props) ("cash app" OR venmo OR zelle OR paypal OR "apple pay" OR crypto) is:reply lang:en -is:retweet',
+    ];
+  }
+
   return [
-    '(POTD OR "pick of the day" OR "best bet" OR capper OR "units") lang:en -is:retweet',
-    '(parlay OR props OR "closing line" OR CLV OR ROI) lang:en -is:retweet',
-    '(Discord OR VIP OR Patreon) (picks OR betting) lang:en -is:retweet',
+    '(sportsbook OR "betting app" OR "where can i bet" OR "sign up" OR signup OR bonus OR "free play" OR "deposit match") is:reply lang:en -is:retweet',
+    '(sports betting OR sportsbetting OR betting) (bonus OR "free play" OR promo) is:reply lang:en -is:retweet',
+    '("cash app" OR venmo OR zelle OR paypal OR "apple pay" OR crypto) (sportsbook OR betting) is:reply lang:en -is:retweet',
   ];
 }
 
@@ -52,43 +63,82 @@ function isHighIntentDepositor(text: string): boolean {
   );
 }
 
-function buildReply(args: {
-  track: Track;
-  tweetText: string;
-  disclaimer: string;
-  daySeed: number;
-}): string {
+function buildReply(args: { tier: Tier; tweetText: string; disclaimer: string; daySeed: number }): string {
   const footer = args.disclaimer ? ` ${args.disclaimer}` : "";
 
-  if (args.track === "ambassadors") {
-    const templates = [
-      "Love the content. If you’re open to a revshare ambassador partnership, DM us AMBASSADOR and we’ll send details.",
-      "Solid work. We’re building an ambassador roster—DM us AMBASSADOR if you want the revshare details.",
-      "Good insight. If you’re interested in an ambassador revshare partnership, DM us AMBASSADOR.",
-    ];
-    return clampText(`${pickFrom(templates, args.daySeed)}${footer}`, 275);
-  }
-
-  const helpful = pickFrom(
-    [
-      "Quick tip: keep it simple—track results, shop lines, and don’t chase.",
-      "Process > one night. Manage bankroll, track units, and avoid tilt.",
-      "If you’re betting weekly: consistency and discipline beat hot streaks.",
-    ],
-    args.daySeed,
-  );
-
-  const cta = isHighIntentDepositor(args.tweetText)
+  const linkCta = isHighIntentDepositor(args.tweetText)
     ? "If you want a 200% deposit match (Free Play bonus), DM us LINK and we'll send the signup link."
     : "If you're looking for a 200% deposit match (Free Play bonus), DM us LINK for the signup link.";
 
-  return clampText(`${helpful} ${cta}${footer}`, 275);
+  if (args.tier === "payout_reviews") {
+    const opener = pickFrom(
+      ["Payouts matter.", "Totally get it—cashouts are everything.", "Real talk: payouts are the #1 thing."],
+      args.daySeed,
+    );
+    return clampText(`${opener} ${linkCta}${footer}`, 275);
+  }
+
+  if (args.tier === "picks_parlays") {
+    const helpful = pickFrom(
+      [
+        "Props/parlays tip: shop lines and keep unit sizing consistent.",
+        "Quick reminder: track your bets and avoid chasing.",
+        "Process > one night. Bankroll discipline wins long term.",
+      ],
+      args.daySeed,
+    );
+    return clampText(`${helpful} ${linkCta}${footer}`, 275);
+  }
+
+  const general = pickFrom(
+    [
+      "If you're betting weekly, bankroll discipline beats hot streaks.",
+      "Quick reminder: track results and don't chase.",
+      "Shop lines, stay consistent, and manage bankroll.",
+    ],
+    args.daySeed,
+  );
+  return clampText(`${general} ${linkCta}${footer}`, 275);
 }
 
-export async function runOutboundEngagement(args: {
-  dryRun: boolean;
-  readBudget: number;
-}): Promise<OutboundResult> {
+function normalizeMaxOutboundPerRun(value: number | null | undefined): number {
+  const n = Number(value ?? 10);
+  if (!Number.isFinite(n)) return 10;
+  return Math.max(0, Math.min(Math.floor(n), 50));
+}
+
+function splitReadBudget(readBudget: number): Array<{ tier: Tier; budget: number }> {
+  const total = Math.floor(readBudget);
+  if (!Number.isFinite(total) || total < 10) return [];
+
+  // X recent search typically expects max_results in [10..100]. We treat `readBudget` as the max posts we'd like
+  // to consume for outbound in this run and split it across tiers without exceeding the total.
+  if (total < 30) return [{ tier: "payout_reviews", budget: total }];
+
+  if (total < 50) {
+    const minEach = 10;
+    const remaining = total - minEach * 2;
+    const payout = minEach + Math.floor(remaining * 0.7);
+    const picks = total - payout;
+    return [
+      { tier: "payout_reviews", budget: payout },
+      { tier: "picks_parlays", budget: Math.max(minEach, picks) },
+    ];
+  }
+
+  const minEach = 10;
+  const remaining = total - minEach * 3;
+  const payout = minEach + Math.floor(remaining * 0.6);
+  const picks = minEach + Math.floor(remaining * 0.3);
+  const general = total - payout - picks;
+  return [
+    { tier: "payout_reviews", budget: payout },
+    { tier: "picks_parlays", budget: picks },
+    { tier: "general", budget: Math.max(minEach, general) },
+  ];
+}
+
+export async function runOutboundEngagement(args: { dryRun: boolean; readBudget: number }): Promise<OutboundResult> {
   const settings = await prisma.xAccountSettings.upsert({
     where: { id: 1 },
     update: {},
@@ -101,6 +151,7 @@ export async function runOutboundEngagement(args: {
       maxPostsPerDay: 3,
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
+      maxOutboundRepliesPerRun: 10,
       schedule: { posts: ["11:00", "16:00", "21:30"] },
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
@@ -108,13 +159,14 @@ export async function runOutboundEngagement(args: {
       enabled: true,
       outboundEnabled: true,
       maxOutboundRepliesPerDay: true,
+      maxOutboundRepliesPerRun: true,
       disclaimerText: true,
     },
   });
 
   if (!settings.enabled) return { status: "skipped", reason: "x_settings_disabled" };
   if (!settings.outboundEnabled) return { status: "skipped", reason: "outbound_disabled" };
-  if (args.readBudget <= 0) return { status: "skipped", reason: "no_read_budget" };
+  if (args.readBudget < 10) return { status: "skipped", reason: "no_read_budget" };
   if (!process.env.X_BEARER_TOKEN) return { status: "skipped", reason: "missing_x_bearer_token" };
 
   const now = new Date();
@@ -129,18 +181,14 @@ export async function runOutboundEngagement(args: {
       createdAt: { gte: dayStart, lt: dayEnd },
     },
   });
+
   const remaining = Math.max(0, settings.maxOutboundRepliesPerDay - repliedToday);
   if (remaining <= 0) return { status: "skipped", reason: "max_outbound_reached" };
 
-  // Keep it conservative: at most 1 outbound reply per worker run.
-  const replyCountThisRun = 1;
-  const willDo = Math.min(replyCountThisRun, remaining);
+  const willDo = Math.min(normalizeMaxOutboundPerRun(settings.maxOutboundRepliesPerRun), remaining);
   if (willDo <= 0) return { status: "skipped", reason: "no_remaining_quota" };
 
   const daySeed = Number(dayStart.getTime() / 1000);
-  const track: Track = daySeed % 2 === 0 ? "depositors" : "ambassadors";
-  const queries = getQueries(track);
-  const query = pickFrom(queries, daySeed + repliedToday * 13);
 
   const x = new XClient({
     bearerToken: getBearerTokenFromEnv(),
@@ -148,60 +196,48 @@ export async function runOutboundEngagement(args: {
     maxRetries: 3,
   });
 
-  const maxResults = Math.max(1, Math.min(10, args.readBudget));
-  const res = await x.getJson<XRecentSearchResponse>("tweets/search/recent", {
-    query,
-    max_results: maxResults,
-    "tweet.fields": ["created_at", "public_metrics", "lang"].join(","),
-  });
+  const tierBudgets = splitReadBudget(args.readBudget);
 
-  const tweets = (res.data.data ?? []).filter((t) => (t.lang ?? "en") === "en");
-  const postsRead = tweets.length;
+  const candidates: Array<{ tweet: XTweet; tier: Tier; query: string }> = [];
+  let postsRead = 0;
 
-  const disclaimer =
-    (settings.disclaimerText && String(settings.disclaimerText).trim()) ||
-    "21+ | Terms apply | Gamble responsibly";
+  for (const { tier, budget } of tierBudgets) {
+    if (budget < 10) continue;
+    const query = pickFrom(getQueries(tier), daySeed + repliedToday * 13 + tier.length * 17);
 
-  // Pick first viable tweet we haven't replied to today.
-  const candidates = tweets
-    .filter((t) => t.id && t.text)
-    .slice(0, Math.min(10, tweets.length));
+    const res = await x.getJson<XRecentSearchResponse>("tweets/search/recent", {
+      query,
+      max_results: Math.min(100, Math.max(10, budget)),
+      "tweet.fields": ["created_at", "public_metrics", "lang"].join(","),
+    });
 
-  let picked: XTweet | null = null;
-  for (const t of candidates) {
-    if (!t.id) continue;
-    if (args.dryRun) {
-      picked = t;
-      break;
+    const tweets = (res.data.data ?? []).filter((t) => (t.lang ?? "en") === "en");
+    postsRead += tweets.length;
+    for (const t of tweets) {
+      if (!t.id || !t.text) continue;
+      candidates.push({ tweet: t, tier, query });
     }
 
-    const reserved = await reserveHandledItem({
-      type: XHandledItemType.outbound_target_tweet,
-      externalId: t.id,
-    });
-    if (!reserved) continue;
-    picked = t;
-    break;
+    if (candidates.length >= willDo * 6) break;
   }
 
-  if (!picked || !picked.id) {
+  const uniqueById = new Map<string, { tweet: XTweet; tier: Tier; query: string }>();
+  for (const c of candidates) {
+    if (c.tweet.id && !uniqueById.has(c.tweet.id)) uniqueById.set(c.tweet.id, c);
+  }
+  const unique = Array.from(uniqueById.values()).slice(0, 100);
+
+  if (unique.length === 0) {
     await prisma.xActionLog.create({
       data: {
         actionType: XActionType.outbound_comment,
         status: XActionStatus.skipped,
         reason: "no_candidate",
-        meta: { track, query, postsRead },
+        meta: { postsRead, strategy: "tiered_depositors_v1" },
       },
     });
-    return { status: "skipped", reason: "no_candidate" };
+    return { status: "skipped", reason: "no_candidate", postsRead };
   }
-
-  const replyText = buildReply({
-    track,
-    tweetText: picked.text,
-    disclaimer,
-    daySeed: daySeed + picked.id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0),
-  });
 
   if (args.dryRun) {
     await prisma.xActionLog.create({
@@ -209,64 +245,101 @@ export async function runOutboundEngagement(args: {
         actionType: XActionType.outbound_comment,
         status: XActionStatus.skipped,
         reason: "dry_run",
-        meta: { track, query, postsRead, targetTweetId: picked.id, replyText },
+        meta: {
+          postsRead,
+          willDo,
+          strategy: "tiered_depositors_v1",
+          candidates: unique.slice(0, Math.min(5, unique.length)).map((u) => ({ tier: u.tier, id: u.tweet.id })),
+        },
       },
     });
-    return { status: "skipped", reason: "dry_run" };
+    return { status: "skipped", reason: "dry_run", postsRead };
   }
 
+  const disclaimer =
+    (settings.disclaimerText && String(settings.disclaimerText).trim()) ||
+    "21+ | Terms apply | Gamble responsibly";
+
   const accessToken = await ensureAccessToken();
-  try {
-    const posted = await replyToTweet({
-      accessToken,
-      text: replyText,
-      inReplyToTweetId: picked.id,
+  let repliesSent = 0;
+  let attempts = 0;
+  const maxAttempts = Math.min(unique.length, willDo * 4);
+
+  for (const c of unique) {
+    if (repliesSent >= willDo) break;
+    if (attempts >= maxAttempts) break;
+    const id = c.tweet.id;
+    if (!id) continue;
+    attempts += 1;
+
+    const reserved = await reserveHandledItem({
+      type: XHandledItemType.outbound_target_tweet,
+      externalId: id,
+      retryErroredAfterMs: 2 * 60 * 60 * 1000,
+    });
+    if (!reserved) continue;
+
+    const replyText = buildReply({
+      tier: c.tier,
+      tweetText: c.tweet.text,
+      disclaimer,
+      daySeed: daySeed + id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0),
     });
 
-    await prisma.xActionLog.create({
-      data: {
-        actionType: XActionType.outbound_comment,
-        status: XActionStatus.success,
-        reason: `outbound:${track}`,
-        xId: posted.id ?? null,
-        meta: { track, query, postsRead, targetTweetId: picked.id, replyText },
-      },
-    });
-
-    await markHandledItemDone({ type: XHandledItemType.outbound_target_tweet, externalId: picked.id });
-
-    return {
-      status: "replied",
-      track,
-      targetTweetId: picked.id,
-      replyTweetId: posted.id,
-      postsRead,
-    };
-  } catch (err) {
     try {
+      const posted = await replyToTweet({
+        accessToken,
+        text: replyText,
+        inReplyToTweetId: id,
+      });
+
       await prisma.xActionLog.create({
         data: {
           actionType: XActionType.outbound_comment,
-          status: XActionStatus.error,
-          reason: "outbound_post_error",
+          status: XActionStatus.success,
+          reason: `outbound:${c.tier}`,
+          xId: posted.id ?? null,
           meta: {
-            track,
-            query,
+            tier: c.tier,
+            query: c.query,
             postsRead,
-            targetTweetId: picked.id,
+            targetTweetId: id,
             replyText,
-            message: err instanceof Error ? err.message : String(err),
+            strategy: "tiered_depositors_v1",
           },
         },
       });
-    } catch {
-      // ignore
+
+      await markHandledItemDone({ type: XHandledItemType.outbound_target_tweet, externalId: id });
+      repliesSent += 1;
+    } catch (err) {
+      try {
+        await prisma.xActionLog.create({
+          data: {
+            actionType: XActionType.outbound_comment,
+            status: XActionStatus.error,
+            reason: "outbound_post_error",
+            meta: {
+              tier: c.tier,
+              query: c.query,
+              postsRead,
+              targetTweetId: id,
+              replyText,
+              message: err instanceof Error ? err.message : String(err),
+            },
+          },
+        });
+      } catch {
+        // ignore
+      }
+      try {
+        await markHandledItemError({ type: XHandledItemType.outbound_target_tweet, externalId: id, error: err });
+      } catch {
+        // ignore
+      }
     }
-    try {
-      await markHandledItemError({ type: XHandledItemType.outbound_target_tweet, externalId: picked.id, error: err });
-    } catch {
-      // ignore
-    }
-    return { status: "skipped", reason: "outbound_post_error" };
   }
+
+  if (repliesSent === 0) return { status: "skipped", reason: "no_sendable_candidate", postsRead };
+  return { status: "processed", tiered: true, repliesSent, postsRead };
 }

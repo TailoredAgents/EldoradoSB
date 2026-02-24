@@ -167,6 +167,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
     const maxPostsPerDay = parseIntStrict(formData.get("maxPostsPerDay"));
     const maxAutoRepliesPerDay = parseIntStrict(formData.get("maxAutoRepliesPerDay"));
     const maxOutboundRepliesPerDay = parseIntStrict(formData.get("maxOutboundRepliesPerDay"));
+    const maxOutboundRepliesPerRun = parseIntStrict(formData.get("maxOutboundRepliesPerRun"));
 
     if (
       maxPostsPerDay < 0 ||
@@ -174,7 +175,9 @@ export async function updateXAccountSettingsAction(formData: FormData) {
       maxAutoRepliesPerDay < 0 ||
       maxAutoRepliesPerDay > 500 ||
       maxOutboundRepliesPerDay < 0 ||
-      maxOutboundRepliesPerDay > 200
+      maxOutboundRepliesPerDay > 200 ||
+      maxOutboundRepliesPerRun < 0 ||
+      maxOutboundRepliesPerRun > 50
     ) {
       throw new Error("invalid caps");
     }
@@ -196,6 +199,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
+        maxOutboundRepliesPerRun,
         schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
         disclaimerText,
       },
@@ -209,6 +213,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxPostsPerDay,
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
+        maxOutboundRepliesPerRun,
         schedule: { posts: [post1, post2, post3] } as Prisma.InputJsonValue,
         disclaimerText,
       },
@@ -308,6 +313,7 @@ export async function exchangeXOAuthCodeAction(args: { code: string; state: stri
       maxPostsPerDay: 3,
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
+      maxOutboundRepliesPerRun: 10,
       schedule: { posts: ["11:00", "16:00", "21:30"] },
     },
   });

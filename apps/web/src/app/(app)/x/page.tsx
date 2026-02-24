@@ -220,6 +220,26 @@ export default async function XPage({
                   </label>
                 </div>
 
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-white/60">Usage guardrail (optional)</div>
+                  <div className="mt-2 text-xs text-white/50">
+                    Caps X pay-per-use <span className="font-mono">posts consumed</span> per <span className="font-mono">UTC day</span>{" "}
+                    (uses <span className="font-mono">/2/usage/tweets</span>). Leave blank to disable.
+                  </div>
+                  <label className="mt-3 block">
+                    <div className="mb-1 text-xs text-white/60">Max posts consumed/day (UTC)</div>
+                    <input
+                      name="maxPostsConsumedPerUtcDay"
+                      type="number"
+                      min={0}
+                      max={500000}
+                      defaultValue={settings.maxPostsConsumedPerUtcDay ?? ""}
+                      placeholder="e.g. 3000"
+                      className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                    />
+                  </label>
+                </div>
+
                 <div className="grid gap-3 rounded-lg border border-white/10 bg-black/40 p-3 md:grid-cols-3">
                   <label className="block">
                     <div className="mb-1 text-xs text-white/60">Post time 1 (ET)</div>

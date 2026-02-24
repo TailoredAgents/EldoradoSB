@@ -31,6 +31,7 @@ import { XActionStatus, XActionType } from "@el-dorado/db";
 import { runAutoPost } from "./x/autopost";
 import { runOutboundEngagement } from "./x/outbound";
 import { runInboundAutoReply } from "./x/inbound";
+import { getXUsageToday } from "./x/usage";
 
 export type RunOptions = {
   dryRun: boolean;
@@ -68,6 +69,29 @@ export async function runOnce(options: RunOptions) {
         },
       });
       return { status: "skipped_disabled" as const, runId: run.id };
+    }
+
+    // Phase 3.5: optional pay-per-use guardrail. If configured, throttle reads based on X "posts consumed" (UTC day).
+    // This helps keep spend predictable when running aggressive outbound/discovery.
+    let xUsage: Prisma.InputJsonValue | null = null;
+    let usageRemainingToday: number | null = null;
+    if (!options.dryRun && process.env.X_BEARER_TOKEN) {
+      try {
+        const xSettings = await prisma.xAccountSettings.findUnique({
+          where: { id: 1 },
+          select: { maxPostsConsumedPerUtcDay: true },
+        });
+
+        const cap = xSettings?.maxPostsConsumedPerUtcDay ?? null;
+        if (cap != null && cap > 0) {
+          const u = await getXUsageToday({ days: 2 });
+          xUsage = { ...u, capConfigured: cap } as unknown as Prisma.InputJsonValue;
+          usageRemainingToday = Math.max(0, cap - u.postsConsumedToday);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        xUsage = { status: "error", message } as unknown as Prisma.InputJsonValue;
+      }
     }
 
     // Phase 3: scheduled auto-posting for the Eldorado account (does not consume post-read budget).
@@ -152,7 +176,11 @@ export async function runOnce(options: RunOptions) {
 
     const maxPostReadsThisRun = settings.maxPostReadsPerRun;
     const remainingToday = Math.max(0, settings.maxPostReadsPerDay - today.xPostReads);
-    const remainingThisRunInitial = Math.min(maxPostReadsThisRun, remainingToday);
+    const remainingThisRunInitial = Math.min(
+      maxPostReadsThisRun,
+      remainingToday,
+      usageRemainingToday ?? Number.POSITIVE_INFINITY,
+    );
 
     if (remainingThisRunInitial <= 0) {
       await prisma.workerRun.update({
@@ -167,6 +195,7 @@ export async function runOnce(options: RunOptions) {
               maxPostReadsPerRun: settings.maxPostReadsPerRun,
               maxPostReadsPerDay: settings.maxPostReadsPerDay,
             },
+            xUsage,
             xAutoPost,
           },
         },
@@ -257,22 +286,23 @@ export async function runOnce(options: RunOptions) {
       const queries = adaptive.queries;
 
       if (!process.env.X_BEARER_TOKEN) {
-        await prisma.workerRun.update({
-          where: { id: run.id },
-          data: {
-            status: WorkerRunStatus.success,
-            finishedAt: new Date(),
-            stats: {
-              phase: 4,
-              note: "missing X_BEARER_TOKEN (skipping discovery pipeline)",
-              xAutoPost,
-              xInbound,
-              xOutbound,
-            },
+      await prisma.workerRun.update({
+        where: { id: run.id },
+        data: {
+          status: WorkerRunStatus.success,
+          finishedAt: new Date(),
+          stats: {
+            phase: 4,
+            note: "missing X_BEARER_TOKEN (skipping discovery pipeline)",
+            xUsage,
+            xAutoPost,
+            xInbound,
+            xOutbound,
           },
-        });
-        return { status: "success" as const, runId: run.id };
-      }
+        },
+      });
+      return { status: "success" as const, runId: run.id };
+    }
 
       const x = new XClient({
         bearerToken: getBearerTokenFromEnv(),
@@ -664,6 +694,7 @@ export async function runOnce(options: RunOptions) {
           finishedAt: new Date(),
           stats: {
             phase: 6,
+            xUsage,
             xAutoPost,
             xInbound,
             xOutbound,
@@ -731,7 +762,7 @@ export async function runOnce(options: RunOptions) {
       data: {
         status: WorkerRunStatus.success,
         finishedAt: new Date(),
-        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xAutoPost, xInbound, xOutbound },
+        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xUsage, xAutoPost, xInbound, xOutbound },
       },
     });
 

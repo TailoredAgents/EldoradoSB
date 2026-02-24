@@ -313,6 +313,9 @@ model XAccountSettings {
   maxOutboundRepliesPerDay Int @default(10)
   maxOutboundRepliesPerRun Int @default(10)
 
+  // Pay-per-use guardrail (UTC day): if set, worker will throttle reads when X "posts consumed" reaches this cap.
+  maxPostsConsumedPerUtcDay Int?
+
   // Schedule stored as JSON for flexibility. Example: { "posts": ["11:00", "16:00", "21:30"] }
   schedule Json?
 

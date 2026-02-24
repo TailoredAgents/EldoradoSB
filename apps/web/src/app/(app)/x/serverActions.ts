@@ -143,6 +143,14 @@ function parseIntStrict(value: FormDataEntryValue | null): number {
   return num;
 }
 
+function parseOptionalInt(value: FormDataEntryValue | null): number | null {
+  const str = String(value ?? "").trim();
+  if (!str) return null;
+  const num = Number(str);
+  if (!Number.isFinite(num) || !Number.isInteger(num)) throw new Error("invalid");
+  return num;
+}
+
 function parseTimeHHMM(value: FormDataEntryValue | null, fallback: string): string {
   const str = String(value ?? "").trim();
   if (!str) return fallback;
@@ -168,6 +176,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
     const maxAutoRepliesPerDay = parseIntStrict(formData.get("maxAutoRepliesPerDay"));
     const maxOutboundRepliesPerDay = parseIntStrict(formData.get("maxOutboundRepliesPerDay"));
     const maxOutboundRepliesPerRun = parseIntStrict(formData.get("maxOutboundRepliesPerRun"));
+    const maxPostsConsumedPerUtcDay = parseOptionalInt(formData.get("maxPostsConsumedPerUtcDay"));
 
     if (
       maxPostsPerDay < 0 ||
@@ -177,7 +186,8 @@ export async function updateXAccountSettingsAction(formData: FormData) {
       maxOutboundRepliesPerDay < 0 ||
       maxOutboundRepliesPerDay > 200 ||
       maxOutboundRepliesPerRun < 0 ||
-      maxOutboundRepliesPerRun > 50
+      maxOutboundRepliesPerRun > 50 ||
+      (maxPostsConsumedPerUtcDay != null && (maxPostsConsumedPerUtcDay < 0 || maxPostsConsumedPerUtcDay > 500000))
     ) {
       throw new Error("invalid caps");
     }
@@ -203,6 +213,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
         maxOutboundRepliesPerRun,
+        maxPostsConsumedPerUtcDay,
         schedule: { posts: [post1, post2, post3, post4, post5, post6] } as Prisma.InputJsonValue,
         disclaimerText,
       },
@@ -217,6 +228,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         maxAutoRepliesPerDay,
         maxOutboundRepliesPerDay,
         maxOutboundRepliesPerRun,
+        maxPostsConsumedPerUtcDay,
         schedule: { posts: [post1, post2, post3, post4, post5, post6] } as Prisma.InputJsonValue,
         disclaimerText,
       },

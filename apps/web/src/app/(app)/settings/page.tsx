@@ -75,6 +75,33 @@ export default async function SettingsPage({
                 />
               </label>
             </div>
+
+            <div className="mt-4 rounded-lg border border-white/10 bg-black/40 p-3">
+              <div className="text-xs uppercase tracking-wide text-white/60">Prospect pipeline (optional)</div>
+              <div className="mt-2 text-xs text-white/50">
+                Legacy ambassador discovery/scoring/draft pipeline. Keep this off when focusing on depositor outreach.
+              </div>
+              <label className="mt-3 flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="prospectPipelineEnabled"
+                  defaultChecked={settings.prospectPipelineEnabled}
+                  className="h-4 w-4 accent-amber-400"
+                />
+                <span>Enable prospect pipeline</span>
+              </label>
+              <label className="mt-3 block">
+                <div className="mb-1 text-xs text-white/60">Max prospect reads / run</div>
+                <input
+                  name="maxProspectPipelinePostReadsPerRun"
+                  type="number"
+                  min={0}
+                  max={200}
+                  defaultValue={settings.maxProspectPipelinePostReadsPerRun}
+                  className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                />
+              </label>
+            </div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/30 p-4">

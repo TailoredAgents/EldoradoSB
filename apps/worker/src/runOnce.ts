@@ -240,6 +240,7 @@ export async function runOnce(options: RunOptions) {
     // Runs before discovery and uses a small portion of the read budget.
     let xOutbound: Prisma.InputJsonValue | null = null;
     let outboundPostReads = 0;
+    let outboundRepliesSent = 0;
     try {
       // Depositor-first: give outbound the remaining read budget so it can find enough targets to reply to.
       const outboundReadBudget = Math.min(60, remainingThisRun);
@@ -250,6 +251,8 @@ export async function runOnce(options: RunOptions) {
         });
         xOutbound = outRes as unknown as Prisma.InputJsonValue;
         if ("postsRead" in outRes && typeof outRes.postsRead === "number") outboundPostReads = outRes.postsRead;
+        if ("repliesSent" in outRes && typeof outRes.repliesSent === "number")
+          outboundRepliesSent = outRes.repliesSent;
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -270,7 +273,118 @@ export async function runOnce(options: RunOptions) {
 
     remainingThisRun = Math.max(0, remainingThisRun - outboundPostReads);
 
+    const xPostReadsDeltaBase = inboundPostReads + outboundPostReads;
+
     if (!options.dryRun) {
+      // Legacy prospect pipeline is optional; depositor-first mode keeps it off by default.
+      if (!settings.prospectPipelineEnabled) {
+        await incrementTodayUsage({
+          xPostReads: xPostReadsDeltaBase,
+          xUserLookups: 0,
+          llmTokensByModel: {},
+        });
+
+        await prisma.workerRun.update({
+          where: { id: run.id },
+          data: {
+            xPostReadsDelta: xPostReadsDeltaBase,
+            xUserLookupsDelta: 0,
+            status: WorkerRunStatus.success,
+            finishedAt: new Date(),
+            stats: {
+              phase: 5,
+              note: "prospect pipeline disabled (depositor-first mode)",
+              xUsage,
+              xAutoPost,
+              xInbound,
+              xOutbound,
+              outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
+              budgets: {
+                remainingThisRunInitial,
+                inboundPostReads,
+                outboundPostReads,
+                remainingThisRunAfterInboundOutbound: remainingThisRun,
+              },
+            },
+          },
+        });
+        return { status: "success" as const, runId: run.id };
+      }
+
+      if (!process.env.X_BEARER_TOKEN) {
+        await incrementTodayUsage({
+          xPostReads: xPostReadsDeltaBase,
+          xUserLookups: 0,
+          llmTokensByModel: {},
+        });
+
+        await prisma.workerRun.update({
+          where: { id: run.id },
+          data: {
+            xPostReadsDelta: xPostReadsDeltaBase,
+            xUserLookupsDelta: 0,
+            status: WorkerRunStatus.success,
+            finishedAt: new Date(),
+            stats: {
+              phase: 5,
+              note: "missing X_BEARER_TOKEN (skipping prospect pipeline)",
+              xUsage,
+              xAutoPost,
+              xInbound,
+              xOutbound,
+              outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
+              budgets: {
+                remainingThisRunInitial,
+                inboundPostReads,
+                outboundPostReads,
+                remainingThisRunAfterInboundOutbound: remainingThisRun,
+              },
+            },
+          },
+        });
+        return { status: "success" as const, runId: run.id };
+      }
+
+      const prospectBudgetThisRun = Math.min(
+        remainingThisRun,
+        Math.max(0, settings.maxProspectPipelinePostReadsPerRun),
+      );
+
+      if (prospectBudgetThisRun <= 0) {
+        await incrementTodayUsage({
+          xPostReads: xPostReadsDeltaBase,
+          xUserLookups: 0,
+          llmTokensByModel: {},
+        });
+
+        await prisma.workerRun.update({
+          where: { id: run.id },
+          data: {
+            xPostReadsDelta: xPostReadsDeltaBase,
+            xUserLookupsDelta: 0,
+            status: WorkerRunStatus.success,
+            finishedAt: new Date(),
+            stats: {
+              phase: 5,
+              note: "no remaining budget for prospect pipeline",
+              xUsage,
+              xAutoPost,
+              xInbound,
+              xOutbound,
+              outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
+              budgets: {
+                remainingThisRunInitial,
+                inboundPostReads,
+                outboundPostReads,
+                remainingThisRunAfterInboundOutbound: remainingThisRun,
+                prospectBudgetThisRun,
+              },
+            },
+          },
+        });
+        return { status: "success" as const, runId: run.id };
+      }
+
       const runIndex = getRunIndexUtc(90);
       const lookbackDays = 30;
       const epsilon = 0.15;
@@ -283,26 +397,10 @@ export async function runOnce(options: RunOptions) {
         lookbackDays,
         epsilon,
       });
-      const queries = adaptive.queries;
 
-      if (!process.env.X_BEARER_TOKEN) {
-      await prisma.workerRun.update({
-        where: { id: run.id },
-        data: {
-          status: WorkerRunStatus.success,
-          finishedAt: new Date(),
-          stats: {
-            phase: 4,
-            note: "missing X_BEARER_TOKEN (skipping discovery pipeline)",
-            xUsage,
-            xAutoPost,
-            xInbound,
-            xOutbound,
-          },
-        },
-      });
-      return { status: "success" as const, runId: run.id };
-    }
+      const selectedQueries = adaptive.queries;
+      const queryCount = Math.min(selectedQueries.length, Math.max(1, prospectBudgetThisRun));
+      const queries = selectedQueries.slice(0, queryCount);
 
       const x = new XClient({
         bearerToken: getBearerTokenFromEnv(),
@@ -311,7 +409,7 @@ export async function runOnce(options: RunOptions) {
       });
 
       // Discovery: 2 queries × 5 posts = 10 post reads target, capped by remaining budget.
-      const perQuery = Math.max(1, Math.min(5, Math.floor(remainingThisRun / queries.length)));
+      const perQuery = Math.max(1, Math.min(5, Math.floor(prospectBudgetThisRun / queries.length)));
       const discovered = await discoverAuthorsFromQueries({
         x,
         queries,
@@ -322,7 +420,7 @@ export async function runOnce(options: RunOptions) {
       const upsertStats = await upsertDiscoveredProspects({ discovered });
 
       // Post budget allocation after discovery.
-      const remainingAfterDiscovery = Math.max(0, remainingThisRun - discoveryPostReads);
+      const remainingAfterDiscovery = Math.max(0, prospectBudgetThisRun - discoveryPostReads);
       const refreshBudget = Math.min(5, remainingAfterDiscovery);
       const samplingBudget = Math.max(0, remainingAfterDiscovery - refreshBudget);
 
@@ -397,7 +495,7 @@ export async function runOnce(options: RunOptions) {
       }
 
       const xPostReadsDelta =
-        inboundPostReads + outboundPostReads + discoveryPostReads + refreshedPostReads + sampledPostReads;
+        xPostReadsDeltaBase + discoveryPostReads + refreshedPostReads + sampledPostReads;
 
       // Analyzer step (Phase 5): score a small number of new prospects with enough samples.
       const modelExtract = getModelExtract();
@@ -698,6 +796,7 @@ export async function runOnce(options: RunOptions) {
             xAutoPost,
             xInbound,
             xOutbound,
+            outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
             runIndex,
             queryIds: queries.map((q) => q.id),
             querySelection: adaptive.debug,
@@ -706,6 +805,7 @@ export async function runOnce(options: RunOptions) {
               inboundPostReads,
               outboundPostReads,
               remainingThisRunAfterInboundOutbound: remainingThisRun,
+              prospectBudgetThisRun,
               discoveryTargetPerQuery: perQuery,
               refreshBudget,
               samplingBudget,
@@ -762,7 +862,16 @@ export async function runOnce(options: RunOptions) {
       data: {
         status: WorkerRunStatus.success,
         finishedAt: new Date(),
-        stats: { phase: 4, dryRun: true, note: "dry run (no X/LLM)", xUsage, xAutoPost, xInbound, xOutbound },
+        stats: {
+          phase: 4,
+          dryRun: true,
+          note: "dry run (no X/LLM)",
+          xUsage,
+          xAutoPost,
+          xInbound,
+          xOutbound,
+          outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
+        },
       },
     });
 

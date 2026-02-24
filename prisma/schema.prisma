@@ -203,6 +203,10 @@ model Settings {
   maxPostReadsPerRun Int @default(25)
   maxPostReadsPerDay Int @default(400)
 
+  // Secondary/optional: legacy ambassador prospecting pipeline (discovery/sampling/LLM scoring/writing).
+  prospectPipelineEnabled Boolean @default(false)
+  maxProspectPipelinePostReadsPerRun Int @default(15)
+
   queueValueCount      Int @default(12)
   queueAcceptanceCount Int @default(6)
   queueExplorationCount Int @default(2)

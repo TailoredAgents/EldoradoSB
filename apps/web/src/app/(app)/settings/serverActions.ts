@@ -17,6 +17,8 @@ export async function updateSettingsAction(formData: FormData) {
     const enabled = formData.get("enabled") === "on";
     const maxPostReadsPerRun = parseIntStrict(formData.get("maxPostReadsPerRun"));
     const maxPostReadsPerDay = parseIntStrict(formData.get("maxPostReadsPerDay"));
+    const prospectPipelineEnabled = formData.get("prospectPipelineEnabled") === "on";
+    const maxProspectPipelinePostReadsPerRun = parseIntStrict(formData.get("maxProspectPipelinePostReadsPerRun"));
     const queueValueCount = parseIntStrict(formData.get("queueValueCount"));
     const queueAcceptanceCount = parseIntStrict(formData.get("queueAcceptanceCount"));
     const queueExplorationCount = parseIntStrict(formData.get("queueExplorationCount"));
@@ -25,6 +27,8 @@ export async function updateSettingsAction(formData: FormData) {
     if (
       maxPostReadsPerRun < 1 ||
       maxPostReadsPerDay < 1 ||
+      maxProspectPipelinePostReadsPerRun < 0 ||
+      maxProspectPipelinePostReadsPerRun > 200 ||
       queueValueCount < 0 ||
       queueAcceptanceCount < 0 ||
       queueExplorationCount < 0
@@ -38,6 +42,8 @@ export async function updateSettingsAction(formData: FormData) {
         enabled,
         maxPostReadsPerRun,
         maxPostReadsPerDay,
+        prospectPipelineEnabled,
+        maxProspectPipelinePostReadsPerRun,
         queueValueCount,
         queueAcceptanceCount,
         queueExplorationCount,
@@ -48,6 +54,8 @@ export async function updateSettingsAction(formData: FormData) {
         enabled,
         maxPostReadsPerRun,
         maxPostReadsPerDay,
+        prospectPipelineEnabled,
+        maxProspectPipelinePostReadsPerRun,
         queueValueCount,
         queueAcceptanceCount,
         queueExplorationCount,

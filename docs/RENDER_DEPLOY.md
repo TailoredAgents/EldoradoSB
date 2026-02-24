@@ -2,7 +2,7 @@
 
 This repo deploys as:
 - **Web service**: Next.js app (`apps/web`)
-- **Worker/Cron job**: Node worker (`apps/worker`) that runs the trickle loop (discover → sample → analyze → queue → drafts)
+- **Worker/Cron job**: Node worker (`apps/worker`) that runs the hourly loop (autopost + inbound auto-reply + outbound engagement; legacy prospect pipeline is optional)
 - **Postgres**: Render Postgres
 
 ## 1) Create Postgres
@@ -24,13 +24,16 @@ Render environment variables for the web service:
 - `APP_PASSWORD`
 - `SESSION_SECRET` (optional; if omitted, `APP_PASSWORD` is used for signing sessions)
 - `DATABASE_URL`
+- `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` (required for X connect + posting/DMs)
+- `X_OAUTH_REDIRECT_URI` (required; `https://<web>/x/callback`)
+- `X_CREDENTIALS_SECRET` (required; encrypts OAuth tokens stored in Postgres)
 
 Recommended:
 - Set `NODE_ENV=production` (Render usually sets this).
 
 ## 3) Create the Worker (cron)
 
-Preferred: **Cron Job** (daily trickle via schedule).
+Preferred: **Cron Job** (hourly loop).
 
 - Root directory: repo root
 - Build command:
@@ -41,6 +44,8 @@ Preferred: **Cron Job** (daily trickle via schedule).
 Schedule recommendation:
 - Every **60–120 minutes** (e.g., `0 * * * *` for hourly).
 
+If you want max throughput, hourly is recommended.
+
 Render environment variables for the worker:
 - `DATABASE_URL`
 - `X_BEARER_TOKEN`
@@ -48,9 +53,12 @@ Render environment variables for the worker:
 - `MODEL_EXTRACT` (default in `.env.example`)
 - `MODEL_RANK` (default in `.env.example`)
 - `MODEL_WRITE` (default in `.env.example`)
+- `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` / `X_OAUTH_TOKEN_URL` (required if the worker needs to refresh OAuth tokens)
+- `X_CREDENTIALS_SECRET` (required if the worker needs to decrypt OAuth tokens)
 
 Optional tuning:
-- Use the **Settings** page in the web UI for queue counts + post caps.
+- Use the **X** page in the web UI to enable features + set caps (posts/day, outbound/day, outbound/run, usage guardrail).
+- Use the **Settings** page in the web UI for global post-read caps and (optional) prospect pipeline toggle.
 
 ## 4) First-time database migration
 

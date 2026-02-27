@@ -15,6 +15,7 @@ type InboundResult =
       dmsScanned: number;
       repliesSent: number;
       dmsSent: number;
+      followUpsSent: number;
       postsRead: number;
     };
 
@@ -31,6 +32,22 @@ function clampText(text: string, max = 275): string {
 
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function isObj(x: unknown): x is Record<string, unknown> {
+  return Boolean(x) && typeof x === "object";
+}
+
+function metaString(meta: unknown, key: string): string | null {
+  if (!isObj(meta)) return null;
+  const v = meta[key];
+  return typeof v === "string" ? v : null;
+}
+
+function metaBoolean(meta: unknown, key: string): boolean | null {
+  if (!isObj(meta)) return null;
+  const v = meta[key];
+  return typeof v === "boolean" ? v : null;
 }
 
 function isLinkIntent(text: string): boolean {
@@ -84,6 +101,14 @@ function makeLinkMessage(args: { url: string; disclaimer: string }): string {
   );
 }
 
+function makeFollowUpMessage(args: { url: string; disclaimer: string }): string {
+  const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
+  return clampText(
+    `Quick follow-up — here’s the signup link again: ${args.url}\n\nIf you need help depositing (${methods}), reply HELP.\n\n${args.disclaimer}`,
+    900,
+  );
+}
+
 function makeMenuMessage(args: { disclaimer: string }): string {
   return clampText(
     `Thanks for reaching out.\n\nReply with:\n- LINK PAYOUT (signup link + bonus)\n- LINK PICKS (signup link + bonus)\n- LINK GEN (signup link + bonus)\n- (Optional) add REDDIT if that’s where you found us\n- AMBASSADOR (revshare partnership)\n- SUPPORT (help)\n\n${args.disclaimer}`,
@@ -116,16 +141,21 @@ function randomToken(bytes = 16): string {
   return crypto.randomBytes(bytes).toString("base64url");
 }
 
-async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl: string; label: string; token?: string | null }) {
+async function createTrackingUrl(args: {
+  baseUrl: string | null;
+  destinationUrl: string;
+  label: string;
+  token?: string | null;
+}): Promise<{ tracked: boolean; url: string; token: string | null; trackingLinkId: string | null }> {
   const baseUrl = args.baseUrl ? args.baseUrl.replace(/\/+$/, "") : null;
-  if (!baseUrl) return args.destinationUrl;
+  if (!baseUrl) return { tracked: false, url: args.destinationUrl, token: null, trackingLinkId: null };
 
   const campaignId = await getOrCreateDefaultCampaignId();
   let tokenOverride = args.token ? String(args.token).trim() : null;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const token = tokenOverride || randomToken(16);
     try {
-      await prisma.trackingLink.create({
+      const created = await prisma.trackingLink.create({
         data: {
           campaignId,
           token,
@@ -133,8 +163,14 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
           label: args.label,
           active: true,
         },
+        select: { id: true, token: true },
       });
-      return `${baseUrl}/r/${token}`;
+      return {
+        tracked: true,
+        url: `${baseUrl}/r/${created.token}`,
+        token: created.token,
+        trackingLinkId: created.id,
+      };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         tokenOverride = null;
@@ -143,7 +179,8 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
       throw err;
     }
   }
-  return args.destinationUrl;
+
+  return { tracked: false, url: args.destinationUrl, token: null, trackingLinkId: null };
 }
 
 async function countAutoRepliesToday(args: { dayStart: Date; dayEnd: Date }) {
@@ -230,6 +267,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
   let repliesSent = 0;
   let dmsSent = 0;
+  let followUpsSent = 0;
   let postsRead = 0;
   let mentionsScanned = 0;
   let dmsScanned = 0;
@@ -381,15 +419,19 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                 ? "general"
                 : "default";
 
-      const linkUrl =
+      const link =
         intent === "link"
           ? await createTrackingUrl({
               baseUrl: settings.publicBaseUrl ?? null,
               destinationUrl,
               label: `x_dm_link:${linkBucket}:${linkSource}`,
             })
-          : null;
-      const linkTracked = intent === "link" ? Boolean(settings.publicBaseUrl) : false;
+          : { tracked: false, url: destinationUrl, token: null, trackingLinkId: null };
+
+      const linkUrl = intent === "link" ? link.url : null;
+      const linkTracked = intent === "link" ? link.tracked : false;
+      const trackingToken = intent === "link" ? link.token : null;
+      const trackingLinkId = intent === "link" ? link.trackingLinkId : null;
 
       const msg =
         intent === "link"
@@ -413,6 +455,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               linkSource,
               linkTracked,
               linkUrl,
+              trackingToken,
+              trackingLinkId,
               msg,
             },
           },
@@ -448,6 +492,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               linkSource,
               linkTracked,
               linkUrl,
+              trackingToken,
+              trackingLinkId,
               msg,
             },
           },
@@ -472,6 +518,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                 linkSource,
                 linkTracked,
                 linkUrl,
+                trackingToken,
+                trackingLinkId,
                 msg,
                 message: err instanceof Error ? err.message : String(err),
               },
@@ -487,6 +535,174 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
         }
       }
     }
+  }
+
+  // Follow-up nurture: if a user received a tracked link DM 12–36 hours ago and hasn't clicked, send one gentle reminder.
+  // Guardrails:
+  // - counts toward maxAutoRepliesPerDay (reason contains "auto_reply")
+  // - max 3 follow-ups per run
+  // - max 30/day (or 25% of maxAutoRepliesPerDay, whichever is lower)
+  try {
+    const remainingActions = Math.max(0, remaining - (repliesSent + dmsSent));
+    const maxDailyFollowUps = Math.min(30, Math.floor(settings.maxAutoRepliesPerDay * 0.25));
+
+    if (!args.dryRun && remainingActions > 0 && maxDailyFollowUps > 0 && settings.publicBaseUrl) {
+      const followUpsAlreadyToday = await prisma.xActionLog.count({
+        where: {
+          actionType: XActionType.dm,
+          status: XActionStatus.success,
+          reason: "auto_reply:dm_followup",
+          createdAt: { gte: dayStart, lt: dayEnd },
+        },
+      });
+      const remainingDailyFollowUps = Math.max(0, maxDailyFollowUps - followUpsAlreadyToday);
+      const maxThisRun = Math.min(3, remainingActions, remainingDailyFollowUps);
+
+      if (maxThisRun > 0) {
+        const nowMs = Date.now();
+        const minAgeMs = 12 * 60 * 60 * 1000;
+        const maxAgeMs = 36 * 60 * 60 * 1000;
+        const since = new Date(nowMs - maxAgeMs);
+
+        const recentLinkDms = await prisma.xActionLog.findMany({
+          where: {
+            actionType: XActionType.dm,
+            status: XActionStatus.success,
+            reason: "auto_reply:dm",
+            createdAt: { gte: since },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 2000,
+          select: { id: true, createdAt: true, meta: true },
+        });
+
+        const candidates = recentLinkDms
+          .map((r) => {
+            const intent = metaString(r.meta, "intent");
+            if (intent !== "link") return null;
+            const tracked = metaBoolean(r.meta, "linkTracked") ?? false;
+            if (!tracked) return null;
+            const targetUserId = metaString(r.meta, "targetUserId");
+            const trackingToken = metaString(r.meta, "trackingToken");
+            if (!targetUserId || !trackingToken) return null;
+
+            return {
+              id: r.id,
+              createdAt: r.createdAt,
+              targetUserId,
+              trackingToken,
+              trackingLinkId: metaString(r.meta, "trackingLinkId"),
+              linkUrl: metaString(r.meta, "linkUrl"),
+              linkBucket: metaString(r.meta, "linkBucket") ?? "unknown",
+              linkSource: metaString(r.meta, "linkSource") ?? "unknown",
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => Boolean(x));
+
+        // Only follow up the most recent LINK DM per user, to avoid spam when they request multiple times.
+        const latestByTarget = new Map<string, (typeof candidates)[number]>();
+        for (const c of candidates) {
+          const existing = latestByTarget.get(c.targetUserId);
+          if (!existing || c.createdAt > existing.createdAt) latestByTarget.set(c.targetUserId, c);
+        }
+
+        let sentNow = 0;
+        for (const c of latestByTarget.values()) {
+          if (sentNow >= maxThisRun) break;
+          const ageMs = nowMs - c.createdAt.getTime();
+          if (ageMs < minAgeMs || ageMs > maxAgeMs) continue;
+
+          const linkId =
+            c.trackingLinkId ||
+            (await prisma.trackingLink
+              .findUnique({ where: { token: c.trackingToken }, select: { id: true } })
+              .then((x) => x?.id ?? null));
+          if (!linkId) continue;
+
+          const clicks = await prisma.clickEvent.count({
+            where: { trackingLinkId: linkId, createdAt: { gte: c.createdAt } },
+          });
+          if (clicks > 0) continue;
+
+          const reserved = await reserveHandledItem({
+            type: XHandledItemType.dm_event,
+            externalId: `followup:${c.trackingToken}`,
+            retryErroredAfterMs: 12 * 60 * 60 * 1000,
+          });
+          if (!reserved) continue;
+
+          const baseUrl = settings.publicBaseUrl.replace(/\/+$/, "");
+          const url = c.linkUrl ?? `${baseUrl}/r/${c.trackingToken}`;
+          const followUpText = makeFollowUpMessage({ url, disclaimer });
+
+          try {
+            const sent = await sendDm({
+              accessToken,
+              participantId: c.targetUserId,
+              text: followUpText,
+            });
+
+            await prisma.xActionLog.create({
+              data: {
+                actionType: XActionType.dm,
+                status: XActionStatus.success,
+                reason: "auto_reply:dm_followup",
+                xId: sent.data?.dm_event_id ?? null,
+                meta: {
+                  targetUserId: c.targetUserId,
+                  trackingToken: c.trackingToken,
+                  trackingLinkId: linkId,
+                  linkBucket: c.linkBucket,
+                  linkSource: c.linkSource,
+                  linkUrl: url,
+                  followUpText,
+                  originalDmLogId: c.id,
+                },
+              },
+            });
+
+            await markHandledItemDone({
+              type: XHandledItemType.dm_event,
+              externalId: `followup:${c.trackingToken}`,
+            });
+
+            followUpsSent += 1;
+            sentNow += 1;
+          } catch (err) {
+            try {
+              await prisma.xActionLog.create({
+                data: {
+                  actionType: XActionType.dm,
+                  status: XActionStatus.error,
+                  reason: "auto_reply:dm_followup_error",
+                  meta: {
+                    targetUserId: c.targetUserId,
+                    trackingToken: c.trackingToken,
+                    trackingLinkId: linkId,
+                    linkBucket: c.linkBucket,
+                    linkSource: c.linkSource,
+                    message: err instanceof Error ? err.message : String(err),
+                  },
+                },
+              });
+            } catch {
+              // ignore
+            }
+            try {
+              await markHandledItemError({
+                type: XHandledItemType.dm_event,
+                externalId: `followup:${c.trackingToken}`,
+                error: err,
+              });
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore: nurture is best-effort
   }
 
   try {
@@ -512,6 +728,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
         dmsScanned,
         repliesSent,
         dmsSent,
+        followUpsSent,
         postsRead,
         mentionError,
         dmError,
@@ -521,5 +738,13 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     },
   });
 
-  return { status: "processed", mentionsScanned, dmsScanned, repliesSent, dmsSent, postsRead };
+  return {
+    status: "processed",
+    mentionsScanned,
+    dmsScanned,
+    repliesSent,
+    dmsSent,
+    followUpsSent,
+    postsRead,
+  };
 }

@@ -56,10 +56,18 @@ type LinkCode = "payout" | "picks" | "gen";
 
 function parseLinkCode(text: string): LinkCode | null {
   const t = normalize(text);
-  const m = /\blink\s+(payout|picks|gen)\b/.exec(t);
+  const m = /\blink\s+(payout|picks|gen)(?:\b|_)/.exec(t);
   if (!m) return null;
   const code = m[1];
   if (code === "payout" || code === "picks" || code === "gen") return code;
+  return null;
+}
+
+type SourceTag = "reddit";
+
+function parseSourceTag(text: string): SourceTag | null {
+  const t = normalize(text);
+  if (t.includes("reddit")) return "reddit";
   return null;
 }
 
@@ -78,7 +86,7 @@ function makeLinkMessage(args: { url: string; disclaimer: string }): string {
 
 function makeMenuMessage(args: { disclaimer: string }): string {
   return clampText(
-    `Thanks for reaching out.\n\nReply with:\n- LINK PAYOUT (signup link + bonus)\n- LINK PICKS (signup link + bonus)\n- LINK GEN (signup link + bonus)\n- AMBASSADOR (revshare partnership)\n- SUPPORT (help)\n\n${args.disclaimer}`,
+    `Thanks for reaching out.\n\nReply with:\n- LINK PAYOUT (signup link + bonus)\n- LINK PICKS (signup link + bonus)\n- LINK GEN (signup link + bonus)\n- (Optional) add REDDIT if that’s where you found us\n- AMBASSADOR (revshare partnership)\n- SUPPORT (help)\n\n${args.disclaimer}`,
     900,
   );
 }
@@ -113,8 +121,9 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
   if (!baseUrl) return args.destinationUrl;
 
   const campaignId = await getOrCreateDefaultCampaignId();
+  let tokenOverride = args.token ? String(args.token).trim() : null;
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const token = args.token ? String(args.token).trim() : randomToken(16);
+    const token = tokenOverride || randomToken(16);
     try {
       await prisma.trackingLink.create({
         data: {
@@ -127,87 +136,14 @@ async function createTrackingUrl(args: { baseUrl: string | null; destinationUrl:
       });
       return `${baseUrl}/r/${token}`;
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") continue;
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        tokenOverride = null;
+        continue;
+      }
       throw err;
     }
   }
   return args.destinationUrl;
-}
-
-async function ensureTierLinkUrl(args: {
-  baseUrl: string | null;
-  settingsId: number;
-  destinationUrl: string;
-  code: LinkCode | null;
-  linkTokenDefault: string | null;
-  linkTokenPayout: string | null;
-  linkTokenPicks: string | null;
-  linkTokenGen: string | null;
-}): Promise<{ url: string; token: string | null; bucket: string }> {
-  const baseUrl = args.baseUrl ? args.baseUrl.replace(/\/+$/, "") : null;
-  if (!baseUrl) return { url: args.destinationUrl, token: null, bucket: "untracked" };
-
-  const bucket =
-    args.code === "payout"
-      ? "payout_reviews"
-      : args.code === "picks"
-        ? "picks_parlays"
-        : args.code === "gen"
-          ? "general"
-          : "default";
-
-  const field =
-    args.code === "payout"
-      ? "linkTokenPayout"
-      : args.code === "picks"
-        ? "linkTokenPicks"
-        : args.code === "gen"
-          ? "linkTokenGen"
-          : "linkTokenDefault";
-
-  const existingToken =
-    field === "linkTokenPayout"
-      ? args.linkTokenPayout
-      : field === "linkTokenPicks"
-        ? args.linkTokenPicks
-        : field === "linkTokenGen"
-          ? args.linkTokenGen
-          : args.linkTokenDefault;
-
-  let token = existingToken ? String(existingToken).trim() : null;
-
-  if (!token) {
-    token = randomToken(16);
-    await prisma.xAccountSettings.update({
-      where: { id: args.settingsId },
-      data: { [field]: token } as unknown as Prisma.XAccountSettingsUpdateInput,
-      select: { id: true },
-    });
-  }
-
-  // Ensure the tracking link exists for this token (idempotent).
-  const existingLink = await prisma.trackingLink.findUnique({
-    where: { token },
-    select: { id: true },
-  });
-  if (!existingLink) {
-    const campaignId = await getOrCreateDefaultCampaignId();
-    try {
-      await prisma.trackingLink.create({
-        data: {
-          campaignId,
-          token,
-          destinationUrl: args.destinationUrl,
-          label: `x_link:${bucket}`,
-          active: true,
-        },
-      });
-    } catch (err) {
-      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
-    }
-  }
-
-  return { url: `${baseUrl}/r/${token}`, token, bucket };
 }
 
 async function countAutoRepliesToday(args: { dayStart: Date; dayEnd: Date }) {
@@ -291,11 +227,6 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     create: { id: 1 },
     select: { lastMentionId: true, lastDmEventId: true },
   });
-
-  let linkTokenDefault = settings.linkTokenDefault;
-  let linkTokenPayout = settings.linkTokenPayout;
-  let linkTokenPicks = settings.linkTokenPicks;
-  let linkTokenGen = settings.linkTokenGen;
 
   let repliesSent = 0;
   let dmsSent = 0;
@@ -438,32 +369,31 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
           : "menu";
 
       const linkCode = intent === "link" ? parseLinkCode(event.text) : null;
-      const link =
+      const linkSource = intent === "link" ? (parseSourceTag(event.text) ?? "unknown") : "none";
+      const linkBucket =
+        intent !== "link"
+          ? "none"
+          : linkCode === "payout"
+            ? "payout_reviews"
+            : linkCode === "picks"
+              ? "picks_parlays"
+              : linkCode === "gen"
+                ? "general"
+                : "default";
+
+      const linkUrl =
         intent === "link"
-          ? await ensureTierLinkUrl({
+          ? await createTrackingUrl({
               baseUrl: settings.publicBaseUrl ?? null,
-              settingsId: settings.id,
               destinationUrl,
-              code: linkCode,
-              linkTokenDefault,
-              linkTokenPayout,
-              linkTokenPicks,
-              linkTokenGen,
+              label: `x_dm_link:${linkBucket}:${linkSource}`,
             })
-          : { url: destinationUrl, token: null, bucket: "none" };
-
-      if (intent === "link" && link.token) {
-        if (linkCode === "payout") linkTokenPayout = link.token;
-        else if (linkCode === "picks") linkTokenPicks = link.token;
-        else if (linkCode === "gen") linkTokenGen = link.token;
-        else linkTokenDefault = link.token;
-      }
-
-      const linkUrl = intent === "link" ? link.url : null;
+          : null;
+      const linkTracked = intent === "link" ? Boolean(settings.publicBaseUrl) : false;
 
       const msg =
         intent === "link"
-          ? makeLinkMessage({ url: link.url, disclaimer })
+          ? makeLinkMessage({ url: linkUrl ?? destinationUrl, disclaimer })
           : intent === "ambassador"
             ? makeAmbassadorQuestions({ disclaimer })
             : makeMenuMessage({ disclaimer });
@@ -479,7 +409,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               targetUserId: event.sender_id,
               intent,
               linkCode,
-              linkBucket: link.bucket,
+              linkBucket,
+              linkSource,
+              linkTracked,
               linkUrl,
               msg,
             },
@@ -512,7 +444,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               targetUserId: event.sender_id,
               intent,
               linkCode,
-              linkBucket: link.bucket,
+              linkBucket,
+              linkSource,
+              linkTracked,
               linkUrl,
               msg,
             },
@@ -534,7 +468,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                 targetUserId: event.sender_id,
                 intent,
                 linkCode,
-                linkBucket: link.bucket,
+                linkBucket,
+                linkSource,
+                linkTracked,
                 linkUrl,
                 msg,
                 message: err instanceof Error ? err.message : String(err),

@@ -21,53 +21,77 @@ export default async function ReportsPage() {
     return typeof v === "string" ? v : null;
   };
 
-  const xSettings = await prisma.xAccountSettings.findUnique({
-    where: { id: 1 },
-    select: {
-      linkTokenDefault: true,
-      linkTokenPayout: true,
-      linkTokenPicks: true,
-      linkTokenGen: true,
-    },
+  const metaBoolean = (meta: unknown, key: string): boolean | null => {
+    if (!isObj(meta)) return null;
+    const v = meta[key];
+    return typeof v === "boolean" ? v : null;
+  };
+
+  const clickAgg30 = await prisma.clickEvent.groupBy({
+    by: ["trackingLinkId"],
+    where: { createdAt: { gte: since30 } },
+    _count: { _all: true },
+  });
+  const clickAgg7 = await prisma.clickEvent.groupBy({
+    by: ["trackingLinkId"],
+    where: { createdAt: { gte: since7 } },
+    _count: { _all: true },
   });
 
-  const xTierTokens = {
-    default: xSettings?.linkTokenDefault ?? null,
-    payout_reviews: xSettings?.linkTokenPayout ?? null,
-    picks_parlays: xSettings?.linkTokenPicks ?? null,
-    general: xSettings?.linkTokenGen ?? null,
-  } as const;
-
-  const trackedTokens = Array.from(
-    new Set(Object.values(xTierTokens).filter((t): t is string => Boolean(t))),
+  const clickLinkIds = Array.from(
+    new Set<string>([...clickAgg30.map((r) => r.trackingLinkId), ...clickAgg7.map((r) => r.trackingLinkId)]),
   );
 
-  const trackedLinks = trackedTokens.length
+  const clickLinks = clickLinkIds.length
     ? await prisma.trackingLink.findMany({
-        where: { token: { in: trackedTokens } },
-        select: { id: true, token: true, label: true },
-      })
-    : [];
-  const trackedLinkIdByToken = new Map(trackedLinks.map((l) => [l.token, l.id]));
-
-  const trackedLinkIds = trackedLinks.map((l) => l.id);
-  const trackedClicks30 = trackedLinkIds.length
-    ? await prisma.clickEvent.groupBy({
-        by: ["trackingLinkId"],
-        where: { createdAt: { gte: since30 }, trackingLinkId: { in: trackedLinkIds } },
-        _count: { _all: true },
-      })
-    : [];
-  const trackedClicks7 = trackedLinkIds.length
-    ? await prisma.clickEvent.groupBy({
-        by: ["trackingLinkId"],
-        where: { createdAt: { gte: since7 }, trackingLinkId: { in: trackedLinkIds } },
-        _count: { _all: true },
+        where: { id: { in: clickLinkIds } },
+        select: { id: true, label: true },
       })
     : [];
 
-  const clicks30ByTrackedLink = new Map(trackedClicks30.map((r) => [r.trackingLinkId, r._count._all]));
-  const clicks7ByTrackedLink = new Map(trackedClicks7.map((r) => [r.trackingLinkId, r._count._all]));
+  const linkLabelById = new Map(clickLinks.map((l) => [l.id, l.label ?? null]));
+
+  const parseDmLinkLabel = (label: string | null): { bucket: string; source: string } | null => {
+    if (!label) return null;
+    if (label.startsWith("x_dm_link:")) {
+      const [, bucket, source] = label.split(":");
+      if (!bucket) return null;
+      return { bucket, source: source || "unknown" };
+    }
+    if (label.startsWith("x_link:")) {
+      const [, bucket] = label.split(":");
+      if (!bucket) return null;
+      return { bucket, source: "unknown" };
+    }
+    return null;
+  };
+
+  const clicks7ByBucket = new Map<string, number>();
+  const clicks30ByBucket = new Map<string, number>();
+  const clicks7ByBucketSource = new Map<string, number>();
+  const clicks30ByBucketSource = new Map<string, number>();
+
+  for (const r of clickAgg30) {
+    const parsed = parseDmLinkLabel(linkLabelById.get(r.trackingLinkId) ?? null);
+    if (!parsed) continue;
+    const n = r._count._all;
+    clicks30ByBucket.set(parsed.bucket, (clicks30ByBucket.get(parsed.bucket) ?? 0) + n);
+    clicks30ByBucketSource.set(
+      `${parsed.bucket}::${parsed.source}`,
+      (clicks30ByBucketSource.get(`${parsed.bucket}::${parsed.source}`) ?? 0) + n,
+    );
+  }
+
+  for (const r of clickAgg7) {
+    const parsed = parseDmLinkLabel(linkLabelById.get(r.trackingLinkId) ?? null);
+    if (!parsed) continue;
+    const n = r._count._all;
+    clicks7ByBucket.set(parsed.bucket, (clicks7ByBucket.get(parsed.bucket) ?? 0) + n);
+    clicks7ByBucketSource.set(
+      `${parsed.bucket}::${parsed.source}`,
+      (clicks7ByBucketSource.get(`${parsed.bucket}::${parsed.source}`) ?? 0) + n,
+    );
+  }
 
   const outboundLogs30 = await prisma.xActionLog.findMany({
     where: { createdAt: { gte: since30 }, actionType: "outbound_comment" },
@@ -104,21 +128,25 @@ export default async function ReportsPage() {
 
   const linkRequestsByBucket30 = new Map<string, number>();
   const linkRequestsByBucket7 = new Map<string, number>();
+  const linkRequestsBySource30 = new Map<string, number>();
+  const linkRequestsBySource7 = new Map<string, number>();
+  let linkRequestsUntracked30 = 0;
+  let linkRequestsUntracked7 = 0;
   for (const r of linkDmSuccess30) {
     const bucket = metaString(r.meta, "linkBucket") ?? "unknown";
     linkRequestsByBucket30.set(bucket, (linkRequestsByBucket30.get(bucket) ?? 0) + 1);
     if (r.createdAt >= since7) linkRequestsByBucket7.set(bucket, (linkRequestsByBucket7.get(bucket) ?? 0) + 1);
-  }
 
-  const getTrackedClicks = (token: string | null): { clicks7: number; clicks30: number } => {
-    if (!token) return { clicks7: 0, clicks30: 0 };
-    const linkId = trackedLinkIdByToken.get(token);
-    if (!linkId) return { clicks7: 0, clicks30: 0 };
-    return {
-      clicks7: clicks7ByTrackedLink.get(linkId) ?? 0,
-      clicks30: clicks30ByTrackedLink.get(linkId) ?? 0,
-    };
-  };
+    const source = metaString(r.meta, "linkSource") ?? "unknown";
+    linkRequestsBySource30.set(source, (linkRequestsBySource30.get(source) ?? 0) + 1);
+    if (r.createdAt >= since7) linkRequestsBySource7.set(source, (linkRequestsBySource7.get(source) ?? 0) + 1);
+
+    const tracked = metaBoolean(r.meta, "linkTracked") ?? false;
+    if (!tracked) {
+      linkRequestsUntracked30 += 1;
+      if (r.createdAt >= since7) linkRequestsUntracked7 += 1;
+    }
+  }
 
   const topOutboundQueries30 = Array.from(outboundByTierQuery30.entries())
     .map(([key, count]) => {
@@ -131,11 +159,24 @@ export default async function ReportsPage() {
     .slice(0, 12);
 
   const depositorFunnelRows = [
-    { key: "payout_reviews", label: "Payout/cashout reviews", token: xTierTokens.payout_reviews },
-    { key: "picks_parlays", label: "Picks/parlays/props", token: xTierTokens.picks_parlays },
-    { key: "general", label: "General sportsbook chatter", token: xTierTokens.general },
-    { key: "default", label: "Default LINK (no code)", token: xTierTokens.default },
+    { key: "payout_reviews", label: "Payout/cashout reviews" },
+    { key: "picks_parlays", label: "Picks/parlays/props" },
+    { key: "general", label: "General sportsbook chatter" },
+    { key: "default", label: "Default LINK (no code)" },
   ] as const;
+
+  const redditLinkRequests7 = linkRequestsBySource7.get("reddit") ?? 0;
+  const redditLinkRequests30 = linkRequestsBySource30.get("reddit") ?? 0;
+
+  const sumClicksForSource = (m: Map<string, number>, source: string): number => {
+    let sum = 0;
+    for (const [k, v] of m) {
+      if (k.endsWith(`::${source}`)) sum += v;
+    }
+    return sum;
+  };
+  const redditClicks7 = sumClicksForSource(clicks7ByBucketSource, "reddit");
+  const redditClicks30 = sumClicksForSource(clicks30ByBucketSource, "reddit");
 
   const weeklyDepositResults = await prisma.weeklyDepositResult.findMany({
     orderBy: { weekStart: "desc" },
@@ -332,7 +373,8 @@ export default async function ReportsPage() {
                 const outbound30 = outboundByTier30.get(row.key) ?? 0;
                 const link7 = linkRequestsByBucket7.get(row.key) ?? 0;
                 const link30 = linkRequestsByBucket30.get(row.key) ?? 0;
-                const clicks = getTrackedClicks(row.token);
+                const clicks7 = clicks7ByBucket.get(row.key) ?? 0;
+                const clicks30 = clicks30ByBucket.get(row.key) ?? 0;
                 return (
                   <tr key={row.key} className="hover:bg-white/5">
                     <td className="px-3 py-2 text-white/80">{row.label}</td>
@@ -340,8 +382,8 @@ export default async function ReportsPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{outbound30}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{link7}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{link30}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{clicks.clicks7}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{clicks.clicks30}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{clicks7}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{clicks30}</td>
                   </tr>
                 );
               })}
@@ -350,10 +392,10 @@ export default async function ReportsPage() {
                 <td className="px-3 py-2 text-right tabular-nums">â€”</td>
                 <td className="px-3 py-2 text-right tabular-nums">â€”</td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {linkRequestsByBucket7.get("untracked") ?? 0}
+                  {linkRequestsUntracked7}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {linkRequestsByBucket30.get("untracked") ?? 0}
+                  {linkRequestsUntracked30}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">0</td>
                 <td className="px-3 py-2 text-right tabular-nums">0</td>
@@ -365,6 +407,12 @@ export default async function ReportsPage() {
         <div className="mt-2 text-xs text-white/50">
           Outbound replies ask for <span className="font-mono">LINK PAYOUT</span>,{" "}
           <span className="font-mono">LINK PICKS</span>, or <span className="font-mono">LINK GEN</span> so you can attribute results.
+          <div className="mt-1">
+            Reddit-tagged DMs: <span className="tabular-nums">{redditLinkRequests7}</span> (7d) /{" "}
+            <span className="tabular-nums">{redditLinkRequests30}</span> (30d) — clicks:{" "}
+            <span className="tabular-nums">{redditClicks7}</span> (7d) /{" "}
+            <span className="tabular-nums">{redditClicks30}</span> (30d)
+          </div>
         </div>
       </div>
 

@@ -24,6 +24,8 @@
 - `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` / `X_OAUTH_TOKEN_URL` (required if the worker needs to refresh OAuth tokens)
 - `X_CREDENTIALS_SECRET` (required if the worker needs to decrypt OAuth tokens)
 - `X_API_BASE_URL` (optional): default `https://api.x.com/2`
+- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USERNAME` / `REDDIT_PASSWORD` (required for Reddit outbound, if enabled)
+- `REDDIT_USER_AGENT` (optional): recommended to set a stable UA string
 
 ## Notes
 

@@ -128,6 +128,86 @@ function defaultDisclaimer(text: string | null | undefined): string {
   return t || "21+ | Terms apply | Gamble responsibly";
 }
 
+type BuiltMessage = { text: string; templateKey: string };
+
+function seedFrom(parts: string[]): number {
+  let acc = 0;
+  for (const p of parts) {
+    const s = String(p ?? "");
+    for (let i = 0; i < s.length; i += 1) acc = (acc * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return acc;
+}
+
+function pickVariant<T>(variants: readonly T[], seed: number): T {
+  const idx = Math.abs(seed) % variants.length;
+  return variants[idx]!;
+}
+
+function buildLinkMessageV2(args: {
+  url: string;
+  disclaimer: string;
+  linkCode: string | null;
+  linkBucket: string;
+  seed: number;
+}): BuiltMessage {
+  const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
+  const codeLine = args.linkCode ? `You asked for ${args.linkCode.toUpperCase()}. ` : "";
+  const variants = [
+    {
+      key: `link:${args.linkBucket}:v1`,
+      text: `${codeLine}Here you go - signup link: ${args.url}\n\nPromo: 200% deposit match (Free Play bonus).\nDeposit methods: ${methods}.\n\nReply HELP if you get stuck.\n\n${args.disclaimer}`,
+    },
+    {
+      key: `link:${args.linkBucket}:v2`,
+      text: `Got you. ${codeLine}Use this link to sign up: ${args.url}\n\nYou will see the 200% match (Free Play bonus) on deposit.\nMethods: ${methods}.\n\nReply HELP if you want a hand.\n\n${args.disclaimer}`,
+    },
+    {
+      key: `link:${args.linkBucket}:v3`,
+      text: `${codeLine}Link: ${args.url}\n\n200% deposit match (Free Play bonus).\nMethods: ${methods}.\n\nIf anything looks off, reply HELP.\n\n${args.disclaimer}`,
+    },
+  ] as const;
+
+  const v = pickVariant(variants, args.seed);
+  return { templateKey: v.key, text: clampText(v.text, 900) };
+}
+
+function buildHelpMessageV2(args: { url: string; disclaimer: string; seed: number }): BuiltMessage {
+  const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
+  const variants = [
+    {
+      key: "help:v1",
+      text: `Happy to help.\n\n1) Sign up here: ${args.url}\n2) Choose a deposit method (${methods})\n3) Complete your deposit and claim the 200% match (Free Play bonus)\n\nIf you get stuck, reply with:\n- the deposit method you chose\n- what step you're on\n\n${args.disclaimer}`,
+    },
+    {
+      key: "help:v2",
+      text: `No worries - here is the link again: ${args.url}\n\nDeposit methods: ${methods}.\n\nReply with what method you are using + what step you are on and I will help you finish it.\n\n${args.disclaimer}`,
+    },
+  ] as const;
+  const v = pickVariant(variants, args.seed);
+  return { templateKey: v.key, text: clampText(v.text, 1200) };
+}
+
+function buildFollowUpMessageV2(args: { url: string; disclaimer: string; seed: number }): BuiltMessage {
+  const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
+  const variants = [
+    {
+      key: "followup:v1",
+      text: `Quick follow-up - here is the signup link again: ${args.url}\n\nIf you need help depositing (${methods}), reply HELP.\n\n${args.disclaimer}`,
+    },
+    {
+      key: "followup:v2",
+      text: `Just bumping this in case it got buried - signup link: ${args.url}\n\nNeed help with deposit (${methods})? Reply HELP.\n\n${args.disclaimer}`,
+    },
+    {
+      key: "followup:v3",
+      text: `FYI - here is that link again: ${args.url}\n\nIf you want help getting set up (Cash App/Venmo/Zelle/etc.), reply HELP.\n\n${args.disclaimer}`,
+    },
+  ] as const;
+  const v = pickVariant(variants, args.seed);
+  return { templateKey: v.key, text: clampText(v.text, 900) };
+}
+
 function makeLinkMessage(args: { url: string; disclaimer: string }): string {
   const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
   return clampText(
@@ -627,13 +707,22 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       const trackingToken = intent === "link" || intent === "help" ? link.token : null;
       const trackingLinkId = intent === "link" || intent === "help" ? link.trackingLinkId : null;
 
-      const msg = shouldAutoReply
+      const built: BuiltMessage | null = shouldAutoReply
         ? intent === "help"
-          ? makeHelpMessage({ url: linkUrl ?? destinationUrl, disclaimer })
-          : makeLinkMessage({ url: linkUrl ?? destinationUrl, disclaimer })
+          ? buildHelpMessageV2({ url: linkUrl ?? destinationUrl, disclaimer, seed: seedFrom([event.id, event.sender_id, "help"]) })
+          : buildLinkMessageV2({
+              url: linkUrl ?? destinationUrl,
+              disclaimer,
+              linkCode: linkCode ? `LINK ${linkCode.toUpperCase()}` : null,
+              linkBucket,
+              seed: seedFrom([event.id, event.sender_id, "link", linkBucket]),
+            })
         : shouldSendMenu
-          ? makeMenuMessage({ disclaimer })
+          ? { templateKey: "menu:v1", text: makeMenuMessage({ disclaimer }) }
           : null;
+
+      const msg = built?.text ?? null;
+      const msgTemplateKey = built?.templateKey ?? null;
 
       if (args.dryRun) {
         await prisma.xActionLog.create({
@@ -653,6 +742,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               trackingToken,
               trackingLinkId,
               msg,
+              msgTemplateKey,
               shouldAutoReply,
               shouldSendMenu,
             },
@@ -735,6 +825,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               trackingToken,
               trackingLinkId,
               msg,
+              msgTemplateKey,
             },
           },
         });
@@ -752,15 +843,16 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               userId: event.sender_id,
               text: redactMessageText(msg),
               createdAt: new Date(),
-              meta: {
-                reason: shouldAutoReply ? "auto_reply:dm" : "auto_reply:dm_menu",
-                intent,
-                linkBucket,
-                linkSource,
-                linkTracked,
-                trackingToken,
-                trackingLinkId,
-              } as Prisma.InputJsonValue,
+                  meta: {
+                    reason: shouldAutoReply ? "auto_reply:dm" : "auto_reply:dm_menu",
+                    intent,
+                    msgTemplateKey,
+                    linkBucket,
+                    linkSource,
+                    linkTracked,
+                    trackingToken,
+                    trackingLinkId,
+                  } as Prisma.InputJsonValue,
             },
           });
         } catch {
@@ -903,7 +995,13 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
           const baseUrl = settings.publicBaseUrl.replace(/\/+$/, "");
           const url = c.linkUrl ?? `${baseUrl}/r/${c.trackingToken}`;
-          const followUpText = makeFollowUpMessage({ url, disclaimer });
+          const builtFollowUp = buildFollowUpMessageV2({
+            url,
+            disclaimer,
+            seed: seedFrom([c.trackingToken, c.targetUserId, "followup"]),
+          });
+          const followUpText = builtFollowUp.text;
+          const followUpTemplateKey = builtFollowUp.templateKey;
 
           try {
             const sent = await sendDm({
@@ -926,6 +1024,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                   linkSource: c.linkSource,
                   linkUrl: url,
                   followUpText,
+                  followUpTemplateKey,
                   originalDmLogId: c.id,
                 },
               },
@@ -946,6 +1045,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                   createdAt: new Date(),
                   meta: {
                     reason: "auto_reply:dm_followup",
+                    followUpTemplateKey,
                     trackingToken: c.trackingToken,
                     trackingLinkId: linkId,
                     linkBucket: c.linkBucket,

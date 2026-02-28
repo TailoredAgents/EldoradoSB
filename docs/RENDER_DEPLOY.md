@@ -55,6 +55,8 @@ Render environment variables for the worker:
 - `MODEL_WRITE` (default in `.env.example`)
 - `X_OAUTH_CLIENT_ID` / `X_OAUTH_CLIENT_SECRET` / `X_OAUTH_TOKEN_URL` (required if the worker needs to refresh OAuth tokens)
 - `X_CREDENTIALS_SECRET` (required if the worker needs to decrypt OAuth tokens)
+- `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USERNAME` / `REDDIT_PASSWORD` (required only if Reddit module is enabled)
+- `REDDIT_USER_AGENT` (recommended if Reddit module is enabled)
 
 Optional tuning:
 - Use the **X** page in the web UI to enable features + set caps (posts/day, outbound/day, outbound/run, usage guardrail).

@@ -406,6 +406,43 @@ model ConversationMessage {
   @@index([platform, userId, createdAt])
 }
 
+model HandledItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  platform  String
+  type      String
+  externalId String
+
+  status    String   @default("reserved") // reserved | done | error
+  lastError String?
+  retryAfter DateTime?
+
+  @@unique([platform, type, externalId])
+  @@index([platform, status])
+  @@index([createdAt])
+}
+
+model RedditAccountSettings {
+  id        Int      @id @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enabled        Boolean @default(false)
+  outboundEnabled Boolean @default(false)
+
+  maxCommentsPerDay Int @default(8)
+  maxCommentsPerRun Int @default(2)
+
+  // Percent of comments that include a soft CTA (only for subreddits allowlisted for CTA).
+  ctaPercent Int @default(15)
+
+  // JSON config:
+  // { "subreddits": [{ "name": "sportsbook", "allowCta": false }, ...], "xHandle": "EldoradoSB" }
+  config Json?
+}
+
 model XHandledItem {
   id        String            @id @default(cuid())
   createdAt DateTime          @default(now())

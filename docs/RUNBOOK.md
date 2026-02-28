@@ -27,8 +27,10 @@
 3. **Inbound auto-reply**:
    - Mentions: tells users to DM `LINK` (no public links).
    - DMs: sends a tracked signup link (when `publicBaseUrl` is set) and logs attribution by bucket.
-4. **Reporting**: `Reports` shows outbound → LINK DMs → clicks, plus a manual weekly deposits log.
-5. **Legacy prospect pipeline** (optional): discovery/scoring/drafts; disabled by default in `Settings`.
+4. **DM triage**: auto-replies only for `LINK *` and `HELP/SUPPORT`; everything else is Devon-manual (with a one-time menu DM per user per week).
+5. **Reddit feeder (optional)**: value-first comments in allowlisted subreddits; limited CTA only in CTA-allowed subs.
+6. **Reporting**: `Reports` shows outbound → LINK DMs → clicks, plus a manual weekly deposits log.
+7. **Legacy prospect pipeline** (optional): discovery/scoring/drafts; disabled by default in `Settings`.
 
 ## Recommended ramp schedule (hourly cron)
 
@@ -47,6 +49,18 @@ Goal: get to ~200 outbound replies/day without triggering restrictions.
 
 If your cron runs hourly, a rough pacing guide is:
 - `Max outbound/day = 200` and `Max outbound/run = 10` (up to ~240/day possible, so daily cap remains the limiter).
+
+## Reddit ramp (new accounts)
+
+Goal: add top-of-funnel without getting the Reddit account restricted.
+
+Recommended starting defaults:
+- `Reddit.maxCommentsPerDay`: 5–8
+- `Reddit.maxCommentsPerRun`: 1–2
+- `Reddit.ctaPercent`: 0–10 (only in CTA-allowed subs)
+
+Rule of thumb:
+- Keep most comments pure value; only add CTA in subs that explicitly allow it.
 
 ## How to tune `Max posts consumed/day (UTC)`
 

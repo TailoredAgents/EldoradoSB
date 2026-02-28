@@ -32,6 +32,7 @@ import { runAutoPost } from "./x/autopost";
 import { runOutboundEngagement } from "./x/outbound";
 import { runInboundAutoReply } from "./x/inbound";
 import { getXUsageToday } from "./x/usage";
+import { runRedditOutbound } from "./reddit/outbound";
 
 export type RunOptions = {
   dryRun: boolean;
@@ -115,6 +116,16 @@ export async function runOnce(options: RunOptions) {
       }
     }
 
+    // Phase 3.8: Reddit feeder (does not consume X post-read budget).
+    let redditOutbound: Prisma.InputJsonValue | null = null;
+    try {
+      const res = await runRedditOutbound({ dryRun: options.dryRun });
+      redditOutbound = res as unknown as Prisma.InputJsonValue;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      redditOutbound = { status: "error", error: message } as unknown as Prisma.InputJsonValue;
+    }
+
     // Manual test: post a tweet using OAuth credentials (safe: only when flag is provided).
     if (options.xTestPost) {
       if (options.dryRun) {
@@ -123,7 +134,7 @@ export async function runOnce(options: RunOptions) {
           data: {
             status: WorkerRunStatus.success,
             finishedAt: new Date(),
-            stats: { phase: "x_test_post", dryRun: true, xAutoPost },
+            stats: { phase: "x_test_post", dryRun: true, xAutoPost, redditOutbound },
           },
         });
         return { status: "success" as const, runId: run.id };
@@ -151,7 +162,7 @@ export async function runOnce(options: RunOptions) {
         data: {
           status: WorkerRunStatus.success,
           finishedAt: new Date(),
-          stats: { phase: "x_test_post", xId: posted.id ?? null, xAutoPost },
+          stats: { phase: "x_test_post", xId: posted.id ?? null, xAutoPost, redditOutbound },
         },
       });
       return { status: "success" as const, runId: run.id };
@@ -168,6 +179,9 @@ export async function runOnce(options: RunOptions) {
             reason: "daily_post_cap_reached",
             today: { xPostReads: today.xPostReads, xUserLookups: today.xUserLookups },
             caps: { maxPostReadsPerDay: settings.maxPostReadsPerDay },
+            xUsage,
+            xAutoPost,
+            redditOutbound,
           },
         },
       });
@@ -197,6 +211,7 @@ export async function runOnce(options: RunOptions) {
             },
             xUsage,
             xAutoPost,
+            redditOutbound,
           },
         },
       });
@@ -794,6 +809,7 @@ export async function runOnce(options: RunOptions) {
             phase: 6,
             xUsage,
             xAutoPost,
+            redditOutbound,
             xInbound,
             xOutbound,
             outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
@@ -868,6 +884,7 @@ export async function runOnce(options: RunOptions) {
           note: "dry run (no X/LLM)",
           xUsage,
           xAutoPost,
+          redditOutbound,
           xInbound,
           xOutbound,
           outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },

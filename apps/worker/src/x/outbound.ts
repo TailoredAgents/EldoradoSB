@@ -104,6 +104,55 @@ function buildReply(args: { tier: Tier; tweetText: string; disclaimer: string; d
   return clampText(`${general} ${linkCta}${footer}`, 275);
 }
 
+function linkCodeForTier(tier: Tier): "LINK PAYOUT" | "LINK PICKS" | "LINK GEN" {
+  return tier === "payout_reviews" ? "LINK PAYOUT" : tier === "picks_parlays" ? "LINK PICKS" : "LINK GEN";
+}
+
+function buildReplyV2(args: {
+  tier: Tier;
+  tweetText: string;
+  disclaimer: string;
+  seed: number;
+}): { replyText: string; variantKey: string; linkCode: string } {
+  const footer = args.disclaimer ? ` ${args.disclaimer}` : "";
+  const linkCode = linkCodeForTier(args.tier);
+
+  const linkCta = isHighIntentDepositor(args.tweetText)
+    ? `If you want a 200% deposit match (Free Play bonus), DM us ${linkCode} and we'll send the signup link.`
+    : `If you're looking for a 200% deposit match (Free Play bonus), DM us ${linkCode} for the signup link.`;
+
+  if (args.tier === "payout_reviews") {
+    const variants: Array<{ key: string; make: () => string }> = [
+      { key: "payout:v1", make: () => `Payouts matter. ${linkCta}${footer}` },
+      { key: "payout:v2", make: () => `Cashouts are everything. ${linkCta}${footer}` },
+      { key: "payout:v3", make: () => `Real talk: payouts are the #1 thing. ${linkCta}${footer}` },
+      { key: "payout:v4", make: () => `If you're switching books because of payouts, we can help. ${linkCta}${footer}` },
+    ];
+    const v = pickFrom(variants, args.seed);
+    return { replyText: clampText(v.make(), 275), variantKey: v.key, linkCode };
+  }
+
+  if (args.tier === "picks_parlays") {
+    const variants: Array<{ key: string; make: () => string }> = [
+      { key: "picks:v1", make: () => `Props/parlays tip: shop lines and keep unit sizing consistent. ${linkCta}${footer}` },
+      { key: "picks:v2", make: () => `Quick reminder: track your bets and avoid chasing. ${linkCta}${footer}` },
+      { key: "picks:v3", make: () => `Bankroll discipline wins long-term. ${linkCta}${footer}` },
+      { key: "picks:v4", make: () => `If you're betting props/parlays weekly, we can help. ${linkCta}${footer}` },
+    ];
+    const v = pickFrom(variants, args.seed);
+    return { replyText: clampText(v.make(), 275), variantKey: v.key, linkCode };
+  }
+
+  const variants: Array<{ key: string; make: () => string }> = [
+    { key: "gen:v1", make: () => `If you're betting weekly, bankroll discipline beats hot streaks. ${linkCta}${footer}` },
+    { key: "gen:v2", make: () => `Quick reminder: track results and don't chase. ${linkCta}${footer}` },
+    { key: "gen:v3", make: () => `Shop lines, stay consistent, and manage bankroll. ${linkCta}${footer}` },
+    { key: "gen:v4", make: () => `If you're looking for a book + bonus, we can help. ${linkCta}${footer}` },
+  ];
+  const v = pickFrom(variants, args.seed);
+  return { replyText: clampText(v.make(), 275), variantKey: v.key, linkCode };
+}
+
 function normalizeMaxOutboundPerRun(value: number | null | undefined): number {
   const n = Number(value ?? 10);
   if (!Number.isFinite(n)) return 10;
@@ -282,12 +331,13 @@ export async function runOutboundEngagement(args: { dryRun: boolean; readBudget:
     });
     if (!reserved) continue;
 
-    const replyText = buildReply({
+    const built = buildReplyV2({
       tier: c.tier,
       tweetText: c.tweet.text,
       disclaimer,
-      daySeed: daySeed + id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0),
+      seed: daySeed + id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0),
     });
+    const replyText = built.replyText;
 
     try {
       const posted = await replyToTweet({
@@ -308,7 +358,9 @@ export async function runOutboundEngagement(args: { dryRun: boolean; readBudget:
             postsRead,
             targetTweetId: id,
             replyText,
-            strategy: "tiered_depositors_v1",
+            replyVariant: built.variantKey,
+            linkCode: built.linkCode,
+            strategy: "tiered_depositors_v2",
           },
         },
       });

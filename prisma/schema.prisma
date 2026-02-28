@@ -376,6 +376,36 @@ model XActionLog {
   @@index([status])
 }
 
+model ConversationMessage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // e.g. "x", "reddit"
+  platform  String
+
+  // External message/event id. Uniqued with platform.
+  externalId String
+
+  // Logical thread key for grouping, e.g. "x_dm:<userId>".
+  threadKey String
+
+  // "inbound" (from user) or "outbound" (from us)
+  direction String
+
+  // The non-Eldorado user id when known (e.g. X user id for DMs).
+  userId String?
+
+  // Redacted text, safe for export/training.
+  text String
+
+  meta Json?
+
+  @@unique([platform, externalId])
+  @@index([createdAt])
+  @@index([platform, threadKey, createdAt])
+  @@index([platform, userId, createdAt])
+}
+
 model XHandledItem {
   id        String            @id @default(cuid())
   createdAt DateTime          @default(now())

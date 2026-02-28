@@ -69,6 +69,26 @@ function isAmbassadorIntent(text: string): boolean {
   return t.includes("ambassador") || t.includes("revshare") || t.includes("rev share") || t.includes("partner");
 }
 
+function isHelpIntent(text: string): boolean {
+  const t = normalize(text);
+  return (
+    t === "help" ||
+    t === "support" ||
+    t.includes("help ") ||
+    t.includes("support") ||
+    t.includes("trouble") ||
+    t.includes("problem") ||
+    t.includes("issue") ||
+    t.includes("cant deposit") ||
+    t.includes("can't deposit") ||
+    t.includes("cant sign") ||
+    t.includes("can't sign") ||
+    t.includes("deposit help") ||
+    t.includes("signup help") ||
+    t.includes("sign up help")
+  );
+}
+
 type LinkCode = "payout" | "picks" | "gen";
 
 function parseLinkCode(text: string): LinkCode | null {
@@ -119,6 +139,14 @@ function makeMenuMessage(args: { disclaimer: string }): string {
 function makeAmbassadorQuestions(args: { disclaimer: string }): string {
   return clampText(
     `Awesome. Quick questions:\n1) Your niche (NFL/NBA/props/parlays/etc.)\n2) Approx followers + weekly post volume\n3) Any VIP/Discord/Patreon today? (yes/no)\n4) Preferred payout method (Cash App/Venmo/Zelle/PayPal/Apple Pay/crypto)\n\nReply here with answers and we’ll follow up.\n\n${args.disclaimer}`,
+    1200,
+  );
+}
+
+function makeHelpMessage(args: { url: string; disclaimer: string }): string {
+  const methods = "Cash App, Venmo, Zelle, PayPal, Apple Pay, crypto";
+  return clampText(
+    `Happy to help.\n\n1) Sign up here: ${args.url}\n2) Choose a deposit method (${methods})\n3) Complete your deposit on-site and claim the 200% match (Free Play bonus)\n\nIf you get stuck, reply with:\n- the deposit method you chose\n- what step you're on\n\n${args.disclaimer}`,
     1200,
   );
 }
@@ -400,16 +428,20 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       if (event.sender_id === meUser.id) continue;
 
       const destinationUrl = "https://eldoradosb.com/";
-      const intent = isLinkIntent(event.text)
-        ? "link"
-        : isAmbassadorIntent(event.text)
-          ? "ambassador"
-          : "menu";
+      const intent = isHelpIntent(event.text)
+        ? "help"
+        : isLinkIntent(event.text)
+          ? "link"
+          : isAmbassadorIntent(event.text)
+            ? "ambassador"
+            : "menu";
 
       const linkCode = intent === "link" ? parseLinkCode(event.text) : null;
-      const linkSource = intent === "link" ? (parseSourceTag(event.text) ?? "unknown") : "none";
+      const linkSource = intent === "link" || intent === "help" ? (parseSourceTag(event.text) ?? "unknown") : "none";
       const linkBucket =
-        intent !== "link"
+        intent === "help"
+          ? "help"
+          : intent !== "link"
           ? "none"
           : linkCode === "payout"
             ? "payout_reviews"
@@ -419,22 +451,58 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                 ? "general"
                 : "default";
 
-      const link =
-        intent === "link"
-          ? await createTrackingUrl({
-              baseUrl: settings.publicBaseUrl ?? null,
-              destinationUrl,
-              label: `x_dm_link:${linkBucket}:${linkSource}`,
-            })
-          : { tracked: false, url: destinationUrl, token: null, trackingLinkId: null };
+      let link:
+        | { tracked: boolean; url: string; token: string | null; trackingLinkId: string | null }
+        | { tracked: false; url: string; token: null; trackingLinkId: null } = { tracked: false, url: destinationUrl, token: null, trackingLinkId: null };
 
-      const linkUrl = intent === "link" ? link.url : null;
-      const linkTracked = intent === "link" ? link.tracked : false;
-      const trackingToken = intent === "link" ? link.token : null;
-      const trackingLinkId = intent === "link" ? link.trackingLinkId : null;
+      if (intent === "help") {
+        const helpSince = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+        const recent = await prisma.xActionLog.findMany({
+          where: {
+            actionType: XActionType.dm,
+            status: XActionStatus.success,
+            reason: "auto_reply:dm",
+            createdAt: { gte: helpSince },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+          select: { meta: true, createdAt: true },
+        });
+
+        const lastForUser = recent.find((r) => metaString(r.meta, "targetUserId") === event.sender_id);
+        const lastUrl = lastForUser ? metaString(lastForUser.meta, "linkUrl") : null;
+        const lastTracked = lastForUser ? metaBoolean(lastForUser.meta, "linkTracked") : null;
+        if (lastUrl && lastTracked === true) {
+          link = {
+            tracked: true,
+            url: lastUrl,
+            token: lastForUser ? metaString(lastForUser.meta, "trackingToken") : null,
+            trackingLinkId: lastForUser ? metaString(lastForUser.meta, "trackingLinkId") : null,
+          };
+        } else {
+          link = await createTrackingUrl({
+            baseUrl: settings.publicBaseUrl ?? null,
+            destinationUrl,
+            label: `x_dm_link:${linkBucket}:${linkSource}`,
+          });
+        }
+      } else if (intent === "link") {
+        link = await createTrackingUrl({
+          baseUrl: settings.publicBaseUrl ?? null,
+          destinationUrl,
+          label: `x_dm_link:${linkBucket}:${linkSource}`,
+        });
+      }
+
+      const linkUrl = intent === "link" || intent === "help" ? link.url : null;
+      const linkTracked = intent === "link" || intent === "help" ? link.tracked : false;
+      const trackingToken = intent === "link" || intent === "help" ? link.token : null;
+      const trackingLinkId = intent === "link" || intent === "help" ? link.trackingLinkId : null;
 
       const msg =
-        intent === "link"
+        intent === "help"
+          ? makeHelpMessage({ url: linkUrl ?? destinationUrl, disclaimer })
+          : intent === "link"
           ? makeLinkMessage({ url: linkUrl ?? destinationUrl, disclaimer })
           : intent === "ambassador"
             ? makeAmbassadorQuestions({ disclaimer })

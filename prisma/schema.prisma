@@ -431,6 +431,7 @@ model RedditAccountSettings {
 
   enabled        Boolean @default(false)
   outboundEnabled Boolean @default(false)
+  inboundEnabled Boolean @default(false)
 
   maxCommentsPerDay Int @default(8)
   maxCommentsPerRun Int @default(2)

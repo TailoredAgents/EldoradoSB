@@ -97,6 +97,15 @@ export default async function RedditPage({
             />
             <span>Enable outbound commenting</span>
           </label>
+          <label className="mt-3 flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              name="inboundEnabled"
+              defaultChecked={settings.inboundEnabled}
+              className="h-4 w-4 accent-amber-400"
+            />
+            <span>Enable inbound message capture</span>
+          </label>
           <div className="mt-3 text-xs text-white/50">
             Requires env vars: <span className="font-mono">REDDIT_CLIENT_ID</span>,{" "}
             <span className="font-mono">REDDIT_CLIENT_SECRET</span>,{" "}

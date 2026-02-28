@@ -62,6 +62,10 @@ Recommended starting defaults:
 Rule of thumb:
 - Keep most comments pure value; only add CTA in subs that explicitly allow it.
 
+## Reddit inbound (optional)
+
+If enabled in `/reddit`, the worker will capture unread Reddit private messages into the DB so Devon can handle them manually in `/inbox` (switch to the Reddit tab).
+
 ## How to tune `Max posts consumed/day (UTC)`
 
 This uses X’s usage endpoint (`/2/usage/tweets`) to throttle when you hit your configured cap.

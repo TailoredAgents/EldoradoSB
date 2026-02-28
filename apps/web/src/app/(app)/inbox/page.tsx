@@ -22,15 +22,20 @@ function metaString(meta: unknown, key: string): string | null {
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams?: { t?: string };
+  searchParams?: { t?: string; p?: string };
 }) {
-  const platform = "x";
+  const platform = searchParams?.p === "reddit" ? "reddit" : "x";
 
-  const xSettings = await prisma.xAccountSettings.findUnique({
-    where: { id: 1 },
-    select: { disclaimerText: true },
-  });
-  const disclaimer = (xSettings?.disclaimerText && String(xSettings.disclaimerText).trim()) || "21+ | Terms apply | Gamble responsibly";
+  const xSettings =
+    platform === "x"
+      ? await prisma.xAccountSettings.findUnique({
+          where: { id: 1 },
+          select: { disclaimerText: true },
+        })
+      : null;
+  const disclaimer =
+    (xSettings?.disclaimerText && String(xSettings.disclaimerText).trim()) ||
+    "21+ | Terms apply | Gamble responsibly";
 
   const threads = await prisma.conversationMessage.groupBy({
     by: ["threadKey", "userId"],
@@ -64,45 +69,77 @@ export default async function InboxPage({
     threads.find((t) => t.threadKey === threadKey)?.userId ??
     (threadKey?.startsWith("x_dm:") ? threadKey.slice("x_dm:".length) : "");
 
-  const lastLinkMsg = [...messages]
-    .reverse()
-    .find((m) => m.direction === "outbound" && (metaString(m.meta, "trackingLinkId") || metaString(m.meta, "trackingToken")));
+  const selectedRedditUser =
+    threads.find((t) => t.threadKey === threadKey)?.userId ??
+    (threadKey?.startsWith("reddit_dm:") ? threadKey.slice("reddit_dm:".length) : "");
 
-  const trackingLinkId = lastLinkMsg ? metaString(lastLinkMsg.meta, "trackingLinkId") : null;
-  const trackingToken = lastLinkMsg ? metaString(lastLinkMsg.meta, "trackingToken") : null;
+  const lastLinkMsg =
+    platform === "x"
+      ? [...messages]
+          .reverse()
+          .find(
+            (m) =>
+              m.direction === "outbound" &&
+              (metaString(m.meta, "trackingLinkId") || metaString(m.meta, "trackingToken")),
+          )
+      : null;
+
+  const trackingLinkId =
+    lastLinkMsg && platform === "x" ? metaString(lastLinkMsg.meta, "trackingLinkId") : null;
+  const trackingToken =
+    lastLinkMsg && platform === "x" ? metaString(lastLinkMsg.meta, "trackingToken") : null;
   const linkSentAt = lastLinkMsg?.createdAt ?? null;
 
   const clickCount =
-    trackingLinkId && linkSentAt
-      ? await prisma.clickEvent.count({ where: { trackingLinkId, createdAt: { gte: linkSentAt } } })
+    platform === "x" && trackingLinkId && linkSentAt
+      ? await prisma.clickEvent.count({
+          where: { trackingLinkId, createdAt: { gte: linkSentAt } },
+        })
       : 0;
 
-  const manualNeeded = await prisma.xActionLog.findMany({
-    where: { actionType: "dm", status: "skipped", reason: "manual:dm_needed" },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { createdAt: true, meta: true },
-  });
-
-  const manualThreads = manualNeeded
-    .map((r) => {
-      const userId = metaString(r.meta, "targetUserId");
-      if (!userId) return null;
-      return { userId, threadKey: `x_dm:${userId}`, createdAt: r.createdAt };
-    })
-    .filter((x): x is { userId: string; threadKey: string; createdAt: Date } => Boolean(x));
+  const manualThreads =
+    platform === "x"
+      ? (
+          await prisma.xActionLog.findMany({
+            where: { actionType: "dm", status: "skipped", reason: "manual:dm_needed" },
+            orderBy: { createdAt: "desc" },
+            take: 20,
+            select: { createdAt: true, meta: true },
+          })
+        )
+          .map((r) => {
+            const userId = metaString(r.meta, "targetUserId");
+            if (!userId) return null;
+            return { userId, threadKey: `x_dm:${userId}`, createdAt: r.createdAt };
+          })
+          .filter((x): x is { userId: string; threadKey: string; createdAt: Date } => Boolean(x))
+      : [];
 
   return (
     <div className="grid gap-6 md:grid-cols-[280px_1fr]">
       <section className="rounded-lg border border-white/10 bg-white/5 p-4">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h1 className="text-lg font-semibold">Inbox</h1>
-          <Link
-            href="/export/conversations?platform=x&format=openai"
-            className="text-xs text-white/70 hover:text-white"
-          >
-            Export JSONL
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/inbox?p=x${threadKey ? `&t=${encodeURIComponent(threadKey)}` : ""}`}
+              className={`text-xs ${platform === "x" ? "text-white" : "text-white/60 hover:text-white"}`}
+            >
+              X
+            </Link>
+            <Link
+              href={`/inbox?p=reddit${threadKey ? `&t=${encodeURIComponent(threadKey)}` : ""}`}
+              className={`text-xs ${platform === "reddit" ? "text-white" : "text-white/60 hover:text-white"}`}
+            >
+              Reddit
+            </Link>
+            <Link
+              href={`/export/conversations?platform=${encodeURIComponent(platform)}&format=openai`}
+              className="text-xs text-white/70 hover:text-white"
+            >
+              Export JSONL
+            </Link>
+          </div>
         </div>
 
         {manualThreads.length > 0 ? (
@@ -112,7 +149,7 @@ export default async function InboxPage({
               {manualThreads.slice(0, 6).map((t) => (
                 <Link
                   key={`${t.threadKey}:${t.createdAt.toISOString()}`}
-                  href={`/inbox?t=${encodeURIComponent(t.threadKey)}`}
+                  href={`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(t.threadKey)}`}
                   className="block text-xs text-amber-100/90 hover:underline"
                 >
                   {t.threadKey} · {formatTs(t.createdAt)}
@@ -129,7 +166,7 @@ export default async function InboxPage({
             threads.map((t) => (
               <Link
                 key={t.threadKey}
-                href={`/inbox?t=${encodeURIComponent(t.threadKey)}`}
+                href={`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(t.threadKey)}`}
                 className={`block rounded-md px-3 py-2 text-sm ${
                   t.threadKey === threadKey ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/5"
                 }`}
@@ -170,6 +207,15 @@ export default async function InboxPage({
                 >
                   Open in X
                 </a>
+              ) : platform === "reddit" ? (
+                <a
+                  className="text-xs text-white/70 hover:text-white"
+                  href="https://www.reddit.com/message/inbox/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Reddit
+                </a>
               ) : null}
             </div>
 
@@ -190,7 +236,7 @@ export default async function InboxPage({
               ))}
             </div>
 
-            {selectedUserId ? (
+            {platform === "x" && selectedUserId ? (
               <form action={sendManualXDmAction} className="mt-4 space-y-2">
                 <input type="hidden" name="userId" value={selectedUserId} />
                 <input type="hidden" name="threadKey" value={threadKey} />
@@ -225,6 +271,19 @@ export default async function InboxPage({
                   </button>
                 </div>
               </form>
+            ) : platform === "reddit" && selectedRedditUser ? (
+              <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-white/70">
+                Reply on Reddit for now (manual):{" "}
+                <a
+                  className="text-white/80 underline hover:text-white"
+                  href="https://www.reddit.com/message/inbox/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  open inbox
+                </a>
+                .
+              </div>
             ) : null}
           </>
         )}

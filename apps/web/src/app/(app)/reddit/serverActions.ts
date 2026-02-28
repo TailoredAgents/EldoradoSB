@@ -31,6 +31,7 @@ export async function updateRedditSettingsAction(formData: FormData) {
   try {
     const enabled = formData.get("enabled") === "on";
     const outboundEnabled = formData.get("outboundEnabled") === "on";
+    const inboundEnabled = formData.get("inboundEnabled") === "on";
     const maxCommentsPerDay = parseIntStrict(formData.get("maxCommentsPerDay"));
     const maxCommentsPerRun = parseIntStrict(formData.get("maxCommentsPerRun"));
     const ctaPercent = parseIntStrict(formData.get("ctaPercent"));
@@ -60,6 +61,7 @@ export async function updateRedditSettingsAction(formData: FormData) {
       update: {
         enabled,
         outboundEnabled,
+        inboundEnabled,
         maxCommentsPerDay,
         maxCommentsPerRun,
         ctaPercent,
@@ -69,6 +71,7 @@ export async function updateRedditSettingsAction(formData: FormData) {
         id: 1,
         enabled,
         outboundEnabled,
+        inboundEnabled,
         maxCommentsPerDay,
         maxCommentsPerRun,
         ctaPercent,
@@ -81,4 +84,3 @@ export async function updateRedditSettingsAction(formData: FormData) {
     redirect("/reddit?error=1");
   }
 }
-

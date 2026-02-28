@@ -33,6 +33,7 @@ import { runOutboundEngagement } from "./x/outbound";
 import { runInboundAutoReply } from "./x/inbound";
 import { getXUsageToday } from "./x/usage";
 import { runRedditOutbound } from "./reddit/outbound";
+import { runRedditInbound } from "./reddit/inbound";
 
 export type RunOptions = {
   dryRun: boolean;
@@ -126,6 +127,16 @@ export async function runOnce(options: RunOptions) {
       redditOutbound = { status: "error", error: message } as unknown as Prisma.InputJsonValue;
     }
 
+    // Phase 3.85: Reddit inbound capture (stores unread messages to DB for Devon-manual handling).
+    let redditInbound: Prisma.InputJsonValue | null = null;
+    try {
+      const res = await runRedditInbound({ dryRun: options.dryRun });
+      redditInbound = res as unknown as Prisma.InputJsonValue;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      redditInbound = { status: "error", error: message } as unknown as Prisma.InputJsonValue;
+    }
+
     // Manual test: post a tweet using OAuth credentials (safe: only when flag is provided).
     if (options.xTestPost) {
       if (options.dryRun) {
@@ -134,7 +145,7 @@ export async function runOnce(options: RunOptions) {
           data: {
             status: WorkerRunStatus.success,
             finishedAt: new Date(),
-            stats: { phase: "x_test_post", dryRun: true, xAutoPost, redditOutbound },
+            stats: { phase: "x_test_post", dryRun: true, xAutoPost, redditOutbound, redditInbound },
           },
         });
         return { status: "success" as const, runId: run.id };
@@ -162,7 +173,7 @@ export async function runOnce(options: RunOptions) {
         data: {
           status: WorkerRunStatus.success,
           finishedAt: new Date(),
-          stats: { phase: "x_test_post", xId: posted.id ?? null, xAutoPost, redditOutbound },
+          stats: { phase: "x_test_post", xId: posted.id ?? null, xAutoPost, redditOutbound, redditInbound },
         },
       });
       return { status: "success" as const, runId: run.id };
@@ -182,6 +193,7 @@ export async function runOnce(options: RunOptions) {
             xUsage,
             xAutoPost,
             redditOutbound,
+            redditInbound,
           },
         },
       });
@@ -212,6 +224,7 @@ export async function runOnce(options: RunOptions) {
             xUsage,
             xAutoPost,
             redditOutbound,
+            redditInbound,
           },
         },
       });
@@ -810,6 +823,7 @@ export async function runOnce(options: RunOptions) {
             xUsage,
             xAutoPost,
             redditOutbound,
+            redditInbound,
             xInbound,
             xOutbound,
             outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },
@@ -885,6 +899,7 @@ export async function runOnce(options: RunOptions) {
           xUsage,
           xAutoPost,
           redditOutbound,
+          redditInbound,
           xInbound,
           xOutbound,
           outbound: { repliesSent: outboundRepliesSent, postsRead: outboundPostReads },

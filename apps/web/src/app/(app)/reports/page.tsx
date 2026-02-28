@@ -115,6 +115,8 @@ export default async function ReportsPage() {
   const outboundByTier30 = new Map<string, number>();
   const outboundByTier7 = new Map<string, number>();
   const outboundByTierQuery30 = new Map<string, number>();
+  const outboundByVariant30 = new Map<string, number>();
+  const outboundByVariant7 = new Map<string, number>();
 
   for (const r of outboundSuccess30) {
     const tier = metaString(r.meta, "tier") ?? (r.reason?.replace(/^outbound:/, "") ?? "unknown");
@@ -124,6 +126,10 @@ export default async function ReportsPage() {
 
     const query = metaString(r.meta, "query") ?? "unknown";
     outboundByTierQuery30.set(`${tier}::${query}`, (outboundByTierQuery30.get(`${tier}::${query}`) ?? 0) + 1);
+
+    const variant = metaString(r.meta, "replyVariant") ?? "unknown";
+    outboundByVariant30.set(variant, (outboundByVariant30.get(variant) ?? 0) + 1);
+    if (r.createdAt >= since7) outboundByVariant7.set(variant, (outboundByVariant7.get(variant) ?? 0) + 1);
   }
 
   const dmSuccess30 = inboundDmLogs30.filter((r) => r.status === "success");
@@ -176,6 +182,57 @@ export default async function ReportsPage() {
   const followUpRows = Array.from(followUpStats.values()).sort((a, b) => b.sent30 - a.sent30);
 
   const linkDmSuccess30 = dmSuccess30.filter((r) => metaString(r.meta, "intent") === "link");
+
+  type OutboundVariantRow = {
+    key: string;
+    outbound7: number;
+    outbound30: number;
+    link7: number;
+    link30: number;
+    clicked7: number;
+    clicked30: number;
+  };
+
+  const variantStats = new Map<string, OutboundVariantRow>();
+  const ensureVariant = (key: string) => {
+    const existing = variantStats.get(key);
+    if (existing) return existing;
+    const created: OutboundVariantRow = {
+      key,
+      outbound7: 0,
+      outbound30: 0,
+      link7: 0,
+      link30: 0,
+      clicked7: 0,
+      clicked30: 0,
+    };
+    variantStats.set(key, created);
+    return created;
+  };
+
+  for (const [key, n] of outboundByVariant30.entries()) {
+    const s = ensureVariant(key);
+    s.outbound30 = n;
+    s.outbound7 = outboundByVariant7.get(key) ?? 0;
+  }
+
+  for (const r of linkDmSuccess30) {
+    const key = metaString(r.meta, "promptedByReplyVariant") ?? "unattributed";
+    const s = ensureVariant(key);
+    s.link30 += 1;
+    const linkId = metaString(r.meta, "trackingLinkId");
+    const clicked30 = Boolean(linkId && (clickCount30ByLinkId.get(linkId) ?? 0) > 0);
+    const clicked7 = Boolean(linkId && (clickCount7ByLinkId.get(linkId) ?? 0) > 0);
+    if (clicked30) s.clicked30 += 1;
+    if (r.createdAt >= since7) {
+      s.link7 += 1;
+      if (clicked7) s.clicked7 += 1;
+    }
+  }
+
+  const variantRows = Array.from(variantStats.values())
+    .sort((a, b) => (b.link30 - a.link30) || (b.outbound30 - a.outbound30))
+    .slice(0, 12);
 
   const linkRequestsByBucket30 = new Map<string, number>();
   const linkRequestsByBucket7 = new Map<string, number>();
@@ -570,6 +627,54 @@ export default async function ReportsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div className="surface p-4">
+        <div className="text-xs uppercase tracking-wide text-white/60">Outbound reply variants (X) (30d)</div>
+        <div className="mt-2 text-xs text-white/50">
+          Tracks which outbound reply variant is generating LINK DMs and clicks (best-effort attribution).
+        </div>
+        <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+              <tr>
+                <th className="px-3 py-2 text-left">Variant</th>
+                <th className="px-3 py-2 text-right">Outbound (30d)</th>
+                <th className="px-3 py-2 text-right">LINK DMs (30d)</th>
+                <th className="px-3 py-2 text-right">Clicked (30d)</th>
+                <th className="px-3 py-2 text-right">LINK rate</th>
+                <th className="px-3 py-2 text-right">Click rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {variantRows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-white/60" colSpan={6}>
+                    No outbound variant data yet.
+                  </td>
+                </tr>
+              ) : (
+                variantRows.map((r) => {
+                  const linkRate = r.outbound30 > 0 ? r.link30 / r.outbound30 : 0;
+                  const clickRate = r.link30 > 0 ? r.clicked30 / r.link30 : 0;
+                  return (
+                    <tr key={r.key} className="hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-xs text-white/80">{r.key}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.outbound30}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.link30}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.clicked30}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{(linkRate * 100).toFixed(1)}%</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{(clickRate * 100).toFixed(1)}%</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 text-xs text-white/50">
+          Attribution requires outbound replies to log <span className="font-mono">targetUserId</span> (enabled in Phase B).
         </div>
       </div>
 

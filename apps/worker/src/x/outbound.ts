@@ -260,7 +260,7 @@ export async function runOutboundEngagement(args: { dryRun: boolean; readBudget:
     const res = await x.getJson<XRecentSearchResponse>("tweets/search/recent", {
       query,
       max_results: Math.min(100, Math.max(10, budget)),
-      "tweet.fields": ["created_at", "public_metrics", "lang"].join(","),
+      "tweet.fields": ["created_at", "public_metrics", "lang", "author_id"].join(","),
     });
 
     const tweets = (res.data.data ?? []).filter((t) => (t.lang ?? "en") === "en");
@@ -357,6 +357,7 @@ export async function runOutboundEngagement(args: { dryRun: boolean; readBudget:
             query: c.query,
             postsRead,
             targetTweetId: id,
+            targetUserId: c.tweet.author_id ?? null,
             replyText,
             replyVariant: built.variantKey,
             linkCode: built.linkCode,

@@ -452,6 +452,39 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
   const dayStart = startOfDayApp(now, tz);
   const dayEnd = startOfNextDayApp(now, tz);
 
+  // Attribution map for Phase B reporting: which outbound reply variant most recently touched a user.
+  // Best-effort: only works for outbound replies created after `targetUserId` started being logged.
+  const attributionSince = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const recentOutbound = await prisma.xActionLog.findMany({
+    where: {
+      actionType: XActionType.outbound_comment,
+      status: XActionStatus.success,
+      createdAt: { gte: attributionSince },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 5000,
+    select: { createdAt: true, reason: true, meta: true },
+  });
+
+  const outboundTouchByUser = new Map<
+    string,
+    { createdAt: Date; tier: string | null; query: string | null; replyVariant: string | null; targetTweetId: string | null }
+  >();
+  for (const r of recentOutbound) {
+    const targetUserId = metaString(r.meta, "targetUserId");
+    if (!targetUserId) continue;
+    if (outboundTouchByUser.has(targetUserId)) continue;
+
+    const tier = metaString(r.meta, "tier") ?? (r.reason?.replace(/^outbound:/, "") ?? null);
+    outboundTouchByUser.set(targetUserId, {
+      createdAt: r.createdAt,
+      tier,
+      query: metaString(r.meta, "query"),
+      replyVariant: metaString(r.meta, "replyVariant"),
+      targetTweetId: metaString(r.meta, "targetTweetId"),
+    });
+  }
+
   const already = await countAutoRepliesToday({ dayStart, dayEnd });
   const remaining = Math.max(0, settings.maxAutoRepliesPerDay - already);
   if (remaining <= 0) {
@@ -754,6 +787,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
       const msg = built?.text ?? null;
       const msgTemplateKey = built?.templateKey ?? null;
+      const promptedBy = shouldAutoReply ? outboundTouchByUser.get(event.sender_id) ?? null : null;
 
       if (args.dryRun) {
         await prisma.xActionLog.create({
@@ -774,6 +808,11 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               trackingLinkId,
               msg,
               msgTemplateKey,
+              promptedByReplyVariant: promptedBy?.replyVariant ?? null,
+              promptedByTier: promptedBy?.tier ?? null,
+              promptedByQuery: promptedBy?.query ?? null,
+              promptedByTweetId: promptedBy?.targetTweetId ?? null,
+              promptedByAt: promptedBy?.createdAt?.toISOString?.() ?? null,
               shouldAutoReply,
               shouldSendMenu,
             },
@@ -857,6 +896,11 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
               trackingLinkId,
               msg,
               msgTemplateKey,
+              promptedByReplyVariant: promptedBy?.replyVariant ?? null,
+              promptedByTier: promptedBy?.tier ?? null,
+              promptedByQuery: promptedBy?.query ?? null,
+              promptedByTweetId: promptedBy?.targetTweetId ?? null,
+              promptedByAt: promptedBy?.createdAt?.toISOString?.() ?? null,
             },
           },
         });
@@ -883,6 +927,10 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
                     linkTracked,
                     trackingToken,
                     trackingLinkId,
+                    promptedByReplyVariant: promptedBy?.replyVariant ?? null,
+                    promptedByTier: promptedBy?.tier ?? null,
+                    promptedByQuery: promptedBy?.query ?? null,
+                    promptedByTweetId: promptedBy?.targetTweetId ?? null,
                   } as Prisma.InputJsonValue,
             },
           });

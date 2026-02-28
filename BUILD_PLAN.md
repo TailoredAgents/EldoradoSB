@@ -1,5 +1,13 @@
 # El Dorado SB Outreach Agent — Build Phases
 
+## Status
+
+This document describes the original phased build-out for the legacy prospect pipeline.
+
+The project has since pivoted to a depositor-first funnel (X outbound engagement → inbound LINK DMs → tracked links, plus optional Reddit feeder).
+
+For day-to-day operations and the current system behavior, use `docs/RUNBOOK.md`.
+
 This document breaks the project into phased milestones with concrete deliverables and “done” criteria. It complements `PROJECT_SPEC.md`.
 
 ## Phase 0 — Foundation (repo + conventions)

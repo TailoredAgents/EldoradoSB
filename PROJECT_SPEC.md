@@ -1,6 +1,22 @@
 # El Dorado SB Outreach Agent (PROJECT SPEC)
 
-Private, Render-hosted, agentic system that discovers and ranks sports/betting accounts on X and produces a daily **Outreach Today (20)** queue with DM/email drafts (assist-only).
+## Status
+
+This spec started as the “prospect/ambassador discovery + scoring + drafts” blueprint.
+
+The project has since pivoted to a **depositor-first** funnel:
+outbound engagement (public replies) → inbound DMs (“LINK …”) → per-DM tracked links → reporting, plus optional Reddit feeder.
+
+For current behavior and ops knobs, treat `docs/RUNBOOK.md` as the source of truth.
+
+## Current system (depositor-first)
+
+- **Auto-posting:** up to 6/day on an ET schedule (mix of promo + non-promo).
+- **Outbound engagement:** public replies on high-intent threads with a CTA to DM `LINK …` (no public link drops).
+- **Inbound:** watches DMs for `LINK …` requests and returns a per-DM tracked link; other messages are left for manual handling.
+- **Reporting:** tracks outbound → LINK DMs → tracked-link clicks; manual weekly deposits can be logged for learning.
+- **Reddit feeder (optional):** low-volume, value-first commenting in allowlisted subs; can capture inbound Reddit messages for manual handling.
+- **Legacy prospect pipeline (optional):** discovery/scoring/drafts for ambassador-style workflows.
 
 ## 1) Goals & non-goals
 
@@ -11,7 +27,8 @@ Private, Render-hosted, agentic system that discovers and ranks sports/betting a
 - Operate with a hard **kill switch** and clear usage/budget visibility.
 
 **Non-goals (MVP)**
-- No automated sending of DMs/emails (assist-only).
+- No autonomous freeform negotiation/sales DMs; only limited, rules-based auto-replies (e.g., LINK + basic support).
+- No automated outbound email sending.
 - No “perfect” geo/age verification; store confidence + flag unknowns.
 
 ## 2) Hosting & services (Render)
@@ -50,7 +67,7 @@ Build an agentic workflow, but keep it simple and reliable:
 
 **LLM steps (called by the orchestrator)**
 - **Analyzer step:** structured feature extraction + scoring + tier + “why” rationale.
-- **Writer step:** DM/email drafts (assist-only) + subject line + disclaimer block.
+- **Writer step (legacy prospect pipeline):** DM/email drafts (assist-only) + subject line + disclaimer block.
 
 **Guardrails (code, non-negotiable)**
 - Rate limit handling and backoff on 429.

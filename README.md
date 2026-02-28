@@ -1,6 +1,9 @@
 # El Dorado SB Outreach Agent
 
-Internal app to discover, rank, and manage outreach to X sports accounts for ambassador recruitment.
+Internal tool that runs the Eldorado depositor-first acquisition loop:
+auto-posting + outbound engagement (public replies) → inbound DMs (“LINK …”) → per-DM tracked links → reporting.
+
+The legacy “prospect/ambassador discovery + scoring + drafts” pipeline still exists, but is optional/secondary.
 
 ## Docs
 - `PROJECT_SPEC.md`

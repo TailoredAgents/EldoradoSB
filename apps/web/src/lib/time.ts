@@ -90,6 +90,17 @@ export function startOfDayApp(date: Date, timeZone = getAppTimeZone()): Date {
   return zonedTimeToUtc({ year: parts.year, month: parts.month, day: parts.day }, timeZone);
 }
 
+// Returns the UTC instant representing midnight of the next day in the app's timezone.
+export function startOfNextDayApp(date: Date, timeZone = getAppTimeZone()): Date {
+  const parts = getPartsInTimeZone(date, timeZone);
+  // Use JS date overflow handling to compute the next calendar day.
+  const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1));
+  return zonedTimeToUtc(
+    { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() },
+    timeZone,
+  );
+}
+
 // Converts YYYY-MM-DD into the UTC instant representing midnight in the app's timezone.
 export function startOfDayYmdApp(ymd: string, timeZone = getAppTimeZone()): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());

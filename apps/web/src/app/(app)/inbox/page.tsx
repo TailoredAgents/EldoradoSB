@@ -1,11 +1,22 @@
 import Link from "next/link";
 import { prisma } from "@el-dorado/db";
 import { sendManualXDmAction } from "./serverActions";
+import { QuickReplyComposer } from "@/components/QuickReplyComposer";
 
 export const dynamic = "force-dynamic";
 
 function formatTs(d: Date) {
   return d.toISOString().replace("T", " ").slice(0, 19);
+}
+
+function isObj(x: unknown): x is Record<string, unknown> {
+  return Boolean(x) && typeof x === "object";
+}
+
+function metaString(meta: unknown, key: string): string | null {
+  if (!isObj(meta)) return null;
+  const v = meta[key];
+  return typeof v === "string" ? v : null;
 }
 
 export default async function InboxPage({
@@ -14,6 +25,12 @@ export default async function InboxPage({
   searchParams?: { t?: string };
 }) {
   const platform = "x";
+
+  const xSettings = await prisma.xAccountSettings.findUnique({
+    where: { id: 1 },
+    select: { disclaimerText: true },
+  });
+  const disclaimer = (xSettings?.disclaimerText && String(xSettings.disclaimerText).trim()) || "21+ | Terms apply | Gamble responsibly";
 
   const threads = await prisma.conversationMessage.groupBy({
     by: ["threadKey", "userId"],
@@ -38,6 +55,7 @@ export default async function InboxPage({
           createdAt: true,
           direction: true,
           text: true,
+          meta: true,
         },
       })
     : [];
@@ -45,6 +63,34 @@ export default async function InboxPage({
   const selectedUserId =
     threads.find((t) => t.threadKey === threadKey)?.userId ??
     (threadKey?.startsWith("x_dm:") ? threadKey.slice("x_dm:".length) : "");
+
+  const lastLinkMsg = [...messages]
+    .reverse()
+    .find((m) => m.direction === "outbound" && (metaString(m.meta, "trackingLinkId") || metaString(m.meta, "trackingToken")));
+
+  const trackingLinkId = lastLinkMsg ? metaString(lastLinkMsg.meta, "trackingLinkId") : null;
+  const trackingToken = lastLinkMsg ? metaString(lastLinkMsg.meta, "trackingToken") : null;
+  const linkSentAt = lastLinkMsg?.createdAt ?? null;
+
+  const clickCount =
+    trackingLinkId && linkSentAt
+      ? await prisma.clickEvent.count({ where: { trackingLinkId, createdAt: { gte: linkSentAt } } })
+      : 0;
+
+  const manualNeeded = await prisma.xActionLog.findMany({
+    where: { actionType: "dm", status: "skipped", reason: "manual:dm_needed" },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { createdAt: true, meta: true },
+  });
+
+  const manualThreads = manualNeeded
+    .map((r) => {
+      const userId = metaString(r.meta, "targetUserId");
+      if (!userId) return null;
+      return { userId, threadKey: `x_dm:${userId}`, createdAt: r.createdAt };
+    })
+    .filter((x): x is { userId: string; threadKey: string; createdAt: Date } => Boolean(x));
 
   return (
     <div className="grid gap-6 md:grid-cols-[280px_1fr]">
@@ -58,6 +104,24 @@ export default async function InboxPage({
             Export JSONL
           </Link>
         </div>
+
+        {manualThreads.length > 0 ? (
+          <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/10 p-3">
+            <div className="text-xs font-semibold text-amber-200">Needs manual reply</div>
+            <div className="mt-2 space-y-1">
+              {manualThreads.slice(0, 6).map((t) => (
+                <Link
+                  key={`${t.threadKey}:${t.createdAt.toISOString()}`}
+                  href={`/inbox?t=${encodeURIComponent(t.threadKey)}`}
+                  className="block text-xs text-amber-100/90 hover:underline"
+                >
+                  {t.threadKey} · {formatTs(t.createdAt)}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="space-y-1">
           {threads.length === 0 ? (
             <div className="text-sm text-white/60">No DM messages captured yet.</div>
@@ -87,6 +151,15 @@ export default async function InboxPage({
               <div>
                 <div className="text-sm font-semibold">{threadKey}</div>
                 <div className="text-xs text-white/60">Messages shown: {messages.length}</div>
+                {trackingLinkId ? (
+                  <div className="mt-1 text-xs text-white/60">
+                    Link:{" "}
+                    <span className={clickCount > 0 ? "text-emerald-200" : "text-white/70"}>
+                      {clickCount > 0 ? `clicked (${clickCount})` : "not clicked yet"}
+                    </span>
+                    {trackingToken ? <span className="text-white/50"> · token {trackingToken}</span> : null}
+                  </div>
+                ) : null}
               </div>
               {selectedUserId ? (
                 <a
@@ -121,12 +194,27 @@ export default async function InboxPage({
               <form action={sendManualXDmAction} className="mt-4 space-y-2">
                 <input type="hidden" name="userId" value={selectedUserId} />
                 <input type="hidden" name="threadKey" value={threadKey} />
-                <textarea
+                <QuickReplyComposer
                   name="text"
-                  rows={4}
-                  className="w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/40"
                   placeholder="Devon reply (manual). Keep it human and concise."
-                  required
+                  templates={[
+                    {
+                      label: "Ask LINK PAYOUT",
+                      text: `If you want the signup link + 200% match, reply "LINK PAYOUT" and I’ll send it.\n\n${disclaimer}`,
+                    },
+                    {
+                      label: "Ask LINK PICKS",
+                      text: `If you want the signup link + 200% match, reply "LINK PICKS" and I’ll send it.\n\n${disclaimer}`,
+                    },
+                    {
+                      label: "Ask LINK GEN",
+                      text: `If you want the signup link + 200% match, reply "LINK GEN" and I’ll send it.\n\n${disclaimer}`,
+                    },
+                    {
+                      label: "Help prompt",
+                      text: `If you’re stuck depositing, reply HELP and tell me which method you’re using (Cash App/Venmo/Zelle/PayPal/Apple Pay/crypto).\n\n${disclaimer}`,
+                    },
+                  ]}
                 />
                 <div className="flex items-center justify-end gap-2">
                   <button
@@ -144,4 +232,3 @@ export default async function InboxPage({
     </div>
   );
 }
-

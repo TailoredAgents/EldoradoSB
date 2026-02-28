@@ -38,6 +38,9 @@ export default async function ReportsPage() {
     _count: { _all: true },
   });
 
+  const clickCount30ByLinkId = new Map(clickAgg30.map((r) => [r.trackingLinkId, r._count._all]));
+  const clickCount7ByLinkId = new Map(clickAgg7.map((r) => [r.trackingLinkId, r._count._all]));
+
   const clickLinkIds = Array.from(
     new Set<string>([...clickAgg30.map((r) => r.trackingLinkId), ...clickAgg7.map((r) => r.trackingLinkId)]),
   );
@@ -124,6 +127,54 @@ export default async function ReportsPage() {
   }
 
   const dmSuccess30 = inboundDmLogs30.filter((r) => r.status === "success");
+  const dmMenu30 = dmSuccess30.filter((r) => r.reason === "auto_reply:dm_menu");
+  const dmAuto30 = dmSuccess30.filter((r) => r.reason === "auto_reply:dm");
+  const dmFollowUp30 = dmSuccess30.filter((r) => r.reason === "auto_reply:dm_followup");
+
+  type TemplateStat = {
+    key: string;
+    sent7: number;
+    sent30: number;
+    clicked7: number;
+    clicked30: number;
+  };
+
+  const templateStats = new Map<string, TemplateStat>();
+  for (const r of dmAuto30) {
+    const key = metaString(r.meta, "msgTemplateKey") ?? "unknown";
+    const linkId = metaString(r.meta, "trackingLinkId");
+    const clicked30 = Boolean(linkId && (clickCount30ByLinkId.get(linkId) ?? 0) > 0);
+    const clicked7 = Boolean(linkId && (clickCount7ByLinkId.get(linkId) ?? 0) > 0);
+
+    const s = templateStats.get(key) ?? { key, sent7: 0, sent30: 0, clicked7: 0, clicked30: 0 };
+    s.sent30 += 1;
+    if (clicked30) s.clicked30 += 1;
+    if (r.createdAt >= since7) {
+      s.sent7 += 1;
+      if (clicked7) s.clicked7 += 1;
+    }
+    templateStats.set(key, s);
+  }
+  const templateRows = Array.from(templateStats.values()).sort((a, b) => b.sent30 - a.sent30);
+
+  const followUpStats = new Map<string, TemplateStat>();
+  for (const r of dmFollowUp30) {
+    const key = metaString(r.meta, "followUpTemplateKey") ?? "unknown";
+    const linkId = metaString(r.meta, "trackingLinkId");
+    const clicked30 = Boolean(linkId && (clickCount30ByLinkId.get(linkId) ?? 0) > 0);
+    const clicked7 = Boolean(linkId && (clickCount7ByLinkId.get(linkId) ?? 0) > 0);
+
+    const s = followUpStats.get(key) ?? { key, sent7: 0, sent30: 0, clicked7: 0, clicked30: 0 };
+    s.sent30 += 1;
+    if (clicked30) s.clicked30 += 1;
+    if (r.createdAt >= since7) {
+      s.sent7 += 1;
+      if (clicked7) s.clicked7 += 1;
+    }
+    followUpStats.set(key, s);
+  }
+  const followUpRows = Array.from(followUpStats.values()).sort((a, b) => b.sent30 - a.sent30);
+
   const linkDmSuccess30 = dmSuccess30.filter((r) => metaString(r.meta, "intent") === "link");
 
   const linkRequestsByBucket30 = new Map<string, number>();
@@ -177,6 +228,29 @@ export default async function ReportsPage() {
   };
   const redditClicks7 = sumClicksForSource(clicks7ByBucketSource, "reddit");
   const redditClicks30 = sumClicksForSource(clicks30ByBucketSource, "reddit");
+
+  const redditOutbound30 = await prisma.conversationMessage.findMany({
+    where: { platform: "reddit", direction: "outbound", createdAt: { gte: since30 } },
+    orderBy: { createdAt: "desc" },
+    take: 10000,
+    select: { createdAt: true, meta: true },
+  });
+
+  const redditByTier30 = new Map<string, number>();
+  const redditByTier7 = new Map<string, number>();
+  let redditCta30 = 0;
+  let redditCta7 = 0;
+  for (const r of redditOutbound30) {
+    const tier = metaString(r.meta, "tier") ?? "unknown";
+    redditByTier30.set(tier, (redditByTier30.get(tier) ?? 0) + 1);
+    const usedCta = metaBoolean(r.meta, "usedCta") ?? false;
+    if (usedCta) redditCta30 += 1;
+
+    if (r.createdAt >= since7) {
+      redditByTier7.set(tier, (redditByTier7.get(tier) ?? 0) + 1);
+      if (usedCta) redditCta7 += 1;
+    }
+  }
 
   const weeklyDepositResults = await prisma.weeklyDepositResult.findMany({
     orderBy: { weekStart: "desc" },
@@ -412,6 +486,146 @@ export default async function ReportsPage() {
             <span className="tabular-nums">{redditLinkRequests30}</span> (30d) — clicks:{" "}
             <span className="tabular-nums">{redditClicks7}</span> (7d) /{" "}
             <span className="tabular-nums">{redditClicks30}</span> (30d)
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="text-xs uppercase tracking-wide text-white/60">DM templates (X) (30d)</div>
+          <div className="mt-2 text-xs text-white/50">
+            Auto-replies for LINK/HELP only. Clicked = tracking link had at least 1 click in window.
+          </div>
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+            <table className="w-full text-sm">
+              <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+                <tr>
+                  <th className="px-3 py-2 text-left">Template</th>
+                  <th className="px-3 py-2 text-right">Sent (7d)</th>
+                  <th className="px-3 py-2 text-right">Clicked (7d)</th>
+                  <th className="px-3 py-2 text-right">Sent (30d)</th>
+                  <th className="px-3 py-2 text-right">Clicked (30d)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {templateRows.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-3 text-white/60" colSpan={5}>
+                      No DM auto-replies yet.
+                    </td>
+                  </tr>
+                ) : (
+                  templateRows.slice(0, 12).map((r) => (
+                    <tr key={r.key} className="hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-xs text-white/80">{r.key}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.sent7}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.clicked7}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.sent30}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.clicked30}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 text-xs text-white/50">
+            Menu DMs sent (30d): <span className="tabular-nums">{dmMenu30.length}</span>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="text-xs uppercase tracking-wide text-white/60">Follow-ups (X) (30d)</div>
+          <div className="mt-2 text-xs text-white/50">
+            Sent 12-36h after link if no click. Max 1 per token.
+          </div>
+          <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+            <table className="w-full text-sm">
+              <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+                <tr>
+                  <th className="px-3 py-2 text-left">Template</th>
+                  <th className="px-3 py-2 text-right">Sent (7d)</th>
+                  <th className="px-3 py-2 text-right">Clicked (7d)</th>
+                  <th className="px-3 py-2 text-right">Sent (30d)</th>
+                  <th className="px-3 py-2 text-right">Clicked (30d)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {followUpRows.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-3 text-white/60" colSpan={5}>
+                      No follow-ups yet.
+                    </td>
+                  </tr>
+                ) : (
+                  followUpRows.slice(0, 12).map((r) => (
+                    <tr key={r.key} className="hover:bg-white/5">
+                      <td className="px-3 py-2 font-mono text-xs text-white/80">{r.key}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.sent7}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.clicked7}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.sent30}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.clicked30}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-white/60">Reddit feeder (30d)</div>
+            <div className="mt-1 text-xs text-white/50">
+              Logged outbound comments. CTA is only used when subreddit is marked CTA-allowed.
+            </div>
+          </div>
+          <Link
+            href="/reddit"
+            className="rounded-md bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+          >
+            Reddit settings â†’
+          </Link>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+            <div className="text-xs text-white/60">Comments (7d)</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums text-white">
+              {Array.from(redditByTier7.values()).reduce((a, b) => a + b, 0)}
+            </div>
+            <div className="mt-1 text-xs text-white/60">
+              CTA: <span className="tabular-nums">{redditCta7}</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+            <div className="text-xs text-white/60">Comments (30d)</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums text-white">
+              {Array.from(redditByTier30.values()).reduce((a, b) => a + b, 0)}
+            </div>
+            <div className="mt-1 text-xs text-white/60">
+              CTA: <span className="tabular-nums">{redditCta30}</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/40 p-3 md:col-span-2">
+            <div className="text-xs text-white/60">By tier (30d)</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Array.from(redditByTier30.entries())
+                .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+                .slice(0, 6)
+                .map(([tier, n]) => (
+                  <span
+                    key={tier}
+                    className="rounded-full bg-white/5 px-2 py-1 text-xs text-white/80"
+                  >
+                    {tier}: <span className="tabular-nums">{n}</span>
+                  </span>
+                ))}
+              {redditOutbound30.length === 0 ? (
+                <span className="text-xs text-white/50">No Reddit comments logged yet.</span>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

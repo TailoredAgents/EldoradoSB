@@ -1,5 +1,5 @@
 import { prisma } from "@el-dorado/db";
-import { getAppTimeZone, startOfDayApp } from "@/lib/time";
+import { getAppTimeZone, startOfDayApp, startOfNextDayApp } from "@/lib/time";
 import { updateRedditSettingsAction } from "./serverActions";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default async function RedditPage({
   const tz = getAppTimeZone();
   const now = new Date();
   const dayStart = startOfDayApp(now, tz);
-  const dayEnd = startOfDayApp(new Date(now.getTime() + 36 * 60 * 60 * 1000), tz);
+  const dayEnd = startOfNextDayApp(now, tz);
 
   const sentToday = await prisma.conversationMessage.count({
     where: { platform: "reddit", direction: "outbound", createdAt: { gte: dayStart, lt: dayEnd } },

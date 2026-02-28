@@ -412,19 +412,19 @@ export default async function ReportsPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-white/60">Depositor funnel (X)</div>
             <div className="mt-1 text-xs text-white/50">
-              Outbound comments â†’ inbound LINK DMs â†’ tracked clicks (7d / 30d).
+              Outbound comments → inbound LINK DMs → tracked clicks (7d / 30d).
             </div>
           </div>
           <Link
             href="/x"
             className="rounded-md bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
           >
-            X settings â†’
+            X settings →
           </Link>
         </div>
 
@@ -463,8 +463,8 @@ export default async function ReportsPage() {
               })}
               <tr className="hover:bg-white/5">
                 <td className="px-3 py-2 text-white/80">Untracked (no publicBaseUrl)</td>
-                <td className="px-3 py-2 text-right tabular-nums">â€”</td>
-                <td className="px-3 py-2 text-right tabular-nums">â€”</td>
+                <td className="px-3 py-2 text-right tabular-nums">—</td>
+                <td className="px-3 py-2 text-right tabular-nums">—</td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {linkRequestsUntracked7}
                 </td>
@@ -491,7 +491,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">DM templates (X) (30d)</div>
           <div className="mt-2 text-xs text-white/50">
             Auto-replies for LINK/HELP only. Clicked = tracking link had at least 1 click in window.
@@ -533,7 +533,7 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Follow-ups (X) (30d)</div>
           <div className="mt-2 text-xs text-white/50">
             Sent 12-36h after link if no click. Max 1 per token.
@@ -573,7 +573,7 @@ export default async function ReportsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-white/60">Reddit feeder (30d)</div>
@@ -585,7 +585,7 @@ export default async function ReportsPage() {
             href="/reddit"
             className="rounded-md bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
           >
-            Reddit settings â†’
+            Reddit settings →
           </Link>
         </div>
 
@@ -630,7 +630,7 @@ export default async function ReportsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Top outbound queries (30d)</div>
         <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
           <table className="w-full text-sm">
@@ -662,7 +662,7 @@ export default async function ReportsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Manual weekly deposits</div>
         <div className="mt-2 text-xs text-white/50">
           Until provider attribution exists, log weekly deposits here by tier or by campaign.
@@ -713,7 +713,7 @@ export default async function ReportsPage() {
               className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
               defaultValue=""
             >
-              <option value="">â€”</option>
+              <option value="">—</option>
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.type})
@@ -788,8 +788,8 @@ export default async function ReportsPage() {
                     <td className="px-3 py-2 font-mono text-xs text-white/80">
                       {new Date(r.weekStart).toISOString().slice(0, 10)}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs text-white/70">{r.tier ?? "â€”"}</td>
-                    <td className="px-3 py-2 text-white/70">{r.campaign?.name ?? "â€”"}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-white/70">{r.tier ?? "—"}</td>
+                    <td className="px-3 py-2 text-white/70">{r.campaign?.name ?? "—"}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.depositors}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.depositsUsd.toFixed(2)}</td>
                   </tr>
@@ -801,7 +801,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Last 7 days</div>
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <div>
@@ -831,7 +831,7 @@ export default async function ReportsPage() {
           </dl>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Last 30 days</div>
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
             <div>
@@ -863,7 +863,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Manual results (last 30 days)
           </div>
@@ -888,7 +888,7 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Campaign clicks (7d / 30d)
           </div>
@@ -929,7 +929,7 @@ export default async function ReportsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">
           Top ambassadors (weekly_results, 30d)
         </div>
@@ -988,7 +988,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Top discovery queries
           </div>
@@ -1085,7 +1085,7 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Primary sport mix
           </div>

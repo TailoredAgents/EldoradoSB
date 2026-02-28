@@ -69,7 +69,7 @@ export default async function XPage({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Connection</div>
           <div className="mt-3 text-sm text-white/80">
             Status:{" "}
@@ -107,13 +107,13 @@ export default async function XPage({
           <div className="mt-4 flex flex-wrap gap-2">
             {!isConnected ? (
               <form action={startXOAuthAction}>
-                <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+                <button className="btn btn-primary px-4">
                   Connect X account
                 </button>
               </form>
             ) : (
               <form action={disconnectXAction}>
-                <button className="rounded-lg bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
+                <button className="btn btn-secondary px-4">
                   Disconnect
                 </button>
               </form>
@@ -127,7 +127,7 @@ export default async function XPage({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Agent settings</div>
           <div className="mt-3 text-sm text-white/80">
             {!settings ? (
@@ -366,7 +366,7 @@ export default async function XPage({
                   />
                 </div>
 
-                <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+                <button className="btn btn-primary px-4">
                   Save
                 </button>
               </form>
@@ -375,14 +375,14 @@ export default async function XPage({
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Recent X actions</div>
         {actions.length === 0 ? (
           <div className="mt-3 text-sm text-white/60">No actions yet.</div>
         ) : (
           <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
-            <table className="w-full text-sm">
-              <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+            <table className="app-table">
+              <thead className="app-thead">
                 <tr>
                   <th className="px-3 py-2 text-left">Time</th>
                   <th className="px-3 py-2 text-left">Type</th>

@@ -1,30 +1,40 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/LogoutButton";
 
-const NAV = [
-  { href: "/outreach-today", label: "Outreach Today" },
-  { href: "/prospects?bucket=new", label: "New" },
-  { href: "/prospects?bucket=in-progress", label: "In Progress" },
-  { href: "/prospects?bucket=done", label: "Done" },
-  { href: "/reports", label: "Reports" },
-  { href: "/campaigns", label: "Campaigns" },
-  { href: "/x", label: "Eldorado X" },
-  { href: "/reddit", label: "Reddit" },
-  { href: "/inbox", label: "Inbox" },
-  { href: "/templates", label: "Templates" },
-  { href: "/usage", label: "Usage" },
-  { href: "/settings", label: "Settings" },
+type NavItem = { href: string; label: string; activePrefix?: string };
+
+const NAV: NavItem[] = [
+  { href: "/outreach-today", label: "Outreach", activePrefix: "/outreach-today" },
+  { href: "/prospects?bucket=new", label: "Prospects", activePrefix: "/prospects" },
+  { href: "/inbox", label: "Inbox", activePrefix: "/inbox" },
+  { href: "/reports", label: "Reports", activePrefix: "/reports" },
+  { href: "/x", label: "X", activePrefix: "/x" },
+  { href: "/reddit", label: "Reddit", activePrefix: "/reddit" },
+  { href: "/campaigns", label: "Campaigns", activePrefix: "/campaigns" },
+  { href: "/templates", label: "Templates", activePrefix: "/templates" },
+  { href: "/usage", label: "Usage", activePrefix: "/usage" },
+  { href: "/settings", label: "Settings", activePrefix: "/settings" },
 ];
 
+function isActive(pathname: string, item: NavItem): boolean {
+  const p = item.activePrefix ?? item.href;
+  return pathname === p || (p !== "/" && pathname.startsWith(p));
+}
+
 export function AppNav() {
+  const pathname = usePathname();
+
   return (
-    <header className="border-b border-white/10 bg-black/30 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-zinc-950/60 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/40">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <div className="flex items-baseline gap-3">
-          <Link href="/outreach-today" className="font-semibold tracking-tight">
-            El Dorado SB Outreach Agent
+          <Link href="/outreach-today" className="font-semibold tracking-tight text-white/90 hover:text-white">
+            Eldorado SB Agent
           </Link>
-          <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-xs text-amber-200">
+          <span className="chip chip-amber rounded-full px-2 py-0.5">
             internal
           </span>
         </div>
@@ -33,7 +43,11 @@ export function AppNav() {
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-md px-3 py-1.5 text-sm text-white/80 hover:bg-white/5 hover:text-white"
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                isActive(pathname, item)
+                  ? "bg-white/10 text-white ring-1 ring-white/10"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
+              }`}
             >
               {item.label}
             </Link>
@@ -44,12 +58,16 @@ export function AppNav() {
         </div>
       </div>
       <div className="mx-auto max-w-6xl px-4 pb-3 md:hidden">
-        <div className="flex flex-wrap gap-2">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-md bg-white/5 px-3 py-1.5 text-xs text-white/80"
+              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs transition-colors ${
+                isActive(pathname, item)
+                  ? "bg-white/10 text-white ring-1 ring-white/10"
+                  : "bg-white/5 text-white/75"
+              }`}
             >
               {item.label}
             </Link>

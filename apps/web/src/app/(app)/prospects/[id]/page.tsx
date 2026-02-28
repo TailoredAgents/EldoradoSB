@@ -81,7 +81,7 @@ export default async function ProspectDetailPage({
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Scores</div>
           <div className="mt-3 grid grid-cols-3 gap-3 text-center">
             <div>
@@ -111,7 +111,7 @@ export default async function ProspectDetailPage({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Profile</div>
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
@@ -148,7 +148,7 @@ export default async function ProspectDetailPage({
           </dl>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Owner</div>
           <form action={updateProspectOwnerAction} className="mt-3 flex gap-2">
             <input type="hidden" name="id" value={prospect.id} />
@@ -169,7 +169,7 @@ export default async function ProspectDetailPage({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Why this account</div>
           {rationale.length ? (
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-white/80">
@@ -182,7 +182,7 @@ export default async function ProspectDetailPage({
           )}
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Notes</div>
           <form action={updateProspectNotesAction} className="mt-3 space-y-2">
             <input type="hidden" name="id" value={prospect.id} />
@@ -200,7 +200,7 @@ export default async function ProspectDetailPage({
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="flex items-end justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-white/60">
@@ -246,7 +246,7 @@ export default async function ProspectDetailPage({
         )}
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-white/60">
@@ -298,7 +298,7 @@ export default async function ProspectDetailPage({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Log outreach
           </div>
@@ -391,7 +391,7 @@ export default async function ProspectDetailPage({
           </form>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Outreach history
           </div>

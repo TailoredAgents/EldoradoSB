@@ -80,7 +80,7 @@ export default async function CampaignsPage({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">New campaign</div>
           <form action={createCampaignAction} className="mt-3 space-y-3">
             <label className="block">
@@ -106,13 +106,13 @@ export default async function CampaignsPage({
                 ))}
               </select>
             </label>
-            <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+            <button className="btn btn-primary px-4">
               Create campaign
             </button>
           </form>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Notes</div>
           <div className="mt-3 space-y-2 text-sm text-white/70">
             <div>
@@ -131,7 +131,7 @@ export default async function CampaignsPage({
           </div>
         ) : (
           campaigns.map((c) => (
-            <div key={c.id} className="rounded-xl border border-white/10 bg-black/30 p-4">
+            <div key={c.id} className="surface p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-white/90">{c.name}</div>
@@ -143,7 +143,7 @@ export default async function CampaignsPage({
               </div>
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                <div className="surface-sm p-3">
                   <div className="text-xs uppercase tracking-wide text-white/60">
                     Create tracking link
                   </div>
@@ -166,13 +166,13 @@ export default async function CampaignsPage({
                         required
                       />
                     </label>
-                    <button className="rounded-lg bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
+                    <button className="btn btn-secondary px-4">
                       Create link
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                <div className="surface-sm p-3">
                   <div className="text-xs uppercase tracking-wide text-white/60">
                     Links (latest 50)
                   </div>
@@ -187,7 +187,7 @@ export default async function CampaignsPage({
                         return (
                           <div
                             key={l.id}
-                            className="rounded-md border border-white/10 bg-black/30 p-3"
+                            className="rounded-md border border-white/10 bg-white/[0.02] p-3"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -222,4 +222,3 @@ export default async function CampaignsPage({
     </div>
   );
 }
-

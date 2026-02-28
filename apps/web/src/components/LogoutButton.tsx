@@ -10,7 +10,7 @@ export function LogoutButton() {
     <button
       type="button"
       onClick={() => startTransition(() => logoutAction())}
-      className="rounded-md bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10 hover:text-white disabled:opacity-50"
+      className="btn btn-secondary py-1.5"
       disabled={isPending}
     >
       {isPending ? "Logging out…" : "Logout"}

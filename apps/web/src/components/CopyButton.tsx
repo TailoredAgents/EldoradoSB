@@ -19,7 +19,7 @@ export function CopyButton({
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1000);
       }}
-      className="rounded-md bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+      className="btn btn-secondary px-3 py-1.5 text-xs"
     >
       {copied ? "Copied" : label}
     </button>

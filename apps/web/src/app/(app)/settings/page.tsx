@@ -35,7 +35,7 @@ export default async function SettingsPage({
       ) : null}
 
       <form action={updateSettingsAction} className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Agent</div>
           <label className="mt-3 flex items-center gap-3 text-sm">
             <input
@@ -51,7 +51,7 @@ export default async function SettingsPage({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">Budgets</div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <label className="block">
@@ -76,7 +76,7 @@ export default async function SettingsPage({
               </label>
             </div>
 
-            <div className="mt-4 rounded-lg border border-white/10 bg-black/40 p-3">
+            <div className="mt-4 surface-sm p-3">
               <div className="text-xs uppercase tracking-wide text-white/60">Prospect pipeline (optional)</div>
               <div className="mt-2 text-xs text-white/50">
                 Legacy ambassador discovery/scoring/draft pipeline. Keep this off when focusing on depositor outreach.
@@ -104,7 +104,7 @@ export default async function SettingsPage({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">Queue mix</div>
             <div className="mt-3 grid grid-cols-3 gap-3">
               <label className="block">
@@ -144,18 +144,18 @@ export default async function SettingsPage({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Disclaimer</div>
           <textarea
             name="disclaimerText"
             defaultValue={settings.disclaimerText ?? ""}
             rows={5}
             placeholder="Add the required disclaimer block here…"
-            className="mt-3 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+            className="mt-3 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
           />
         </div>
 
-        <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+        <button className="btn btn-primary px-4">
           Save settings
         </button>
       </form>

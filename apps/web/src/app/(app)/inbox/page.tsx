@@ -117,7 +117,7 @@ export default async function InboxPage({
 
   return (
     <div className="grid gap-6 md:grid-cols-[280px_1fr]">
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4">
+      <section className="surface p-4">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h1 className="text-lg font-semibold">Inbox</h1>
           <div className="flex items-center gap-3">
@@ -179,7 +179,7 @@ export default async function InboxPage({
         </div>
       </section>
 
-      <section className="rounded-lg border border-white/10 bg-white/5 p-4">
+      <section className="surface p-4">
         {!threadKey ? (
           <div className="text-sm text-white/70">Select a thread to view messages.</div>
         ) : (

@@ -22,7 +22,7 @@ export function QuickReplyComposer(props: {
               key={t.label}
               type="button"
               onClick={() => setText(t.text)}
-              className="rounded-md bg-white/10 px-2.5 py-1.5 text-xs text-white/80 hover:bg-white/15"
+              className="btn btn-secondary px-2.5 py-1.5 text-xs"
             >
               {t.label}
             </button>
@@ -30,7 +30,7 @@ export function QuickReplyComposer(props: {
           <button
             type="button"
             onClick={() => setText("")}
-            className="rounded-md bg-white/5 px-2.5 py-1.5 text-xs text-white/60 hover:bg-white/10"
+            className="btn btn-ghost px-2.5 py-1.5 text-xs"
           >
             Clear
           </button>
@@ -42,11 +42,10 @@ export function QuickReplyComposer(props: {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
-        className="w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/40"
+        className="app-input placeholder:text-white/40"
         placeholder={props.placeholder}
         required
       />
     </div>
   );
 }
-

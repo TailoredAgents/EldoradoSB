@@ -36,7 +36,7 @@ export default async function TemplatesPage({
       ) : null}
 
       <form action={saveTemplatesAction} className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">
             Templates JSON
           </div>
@@ -44,14 +44,14 @@ export default async function TemplatesPage({
             name="templates"
             defaultValue={templatesJson}
             rows={18}
-            className="mt-3 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-xs text-white outline-none focus:border-amber-400/50"
+            className="mt-3 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 font-mono text-xs text-white outline-none focus:border-amber-400/50"
           />
           <div className="mt-2 text-xs text-white/50">
             Store whatever keys you want (e.g., `dm_default`, `email_default`, persona variants).
           </div>
         </div>
 
-        <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+        <button className="btn btn-primary px-4">
           Save templates
         </button>
       </form>

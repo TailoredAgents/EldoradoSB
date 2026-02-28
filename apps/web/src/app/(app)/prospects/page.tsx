@@ -62,7 +62,7 @@ export default async function ProspectsPage({
             placeholder="Search handle/name…"
             className="w-56 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
           />
-          <button className="rounded-lg bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10">
+          <button className="btn btn-secondary px-3">
             Search
           </button>
         </form>
@@ -82,7 +82,7 @@ export default async function ProspectsPage({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+      <div className="surface overflow-hidden">
         <div className="md:hidden">
           {prospects.length === 0 ? (
             <div className="px-4 py-6 text-sm text-white/60">
@@ -154,8 +154,8 @@ export default async function ProspectsPage({
         </div>
 
         <div className="hidden md:block">
-        <table className="w-full text-sm">
-          <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+        <table className="app-table">
+          <thead className="app-thead">
             <tr>
               <th className="px-4 py-3 text-left">Account</th>
               <th className="px-4 py-3 text-left">Status</th>

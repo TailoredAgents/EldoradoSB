@@ -74,7 +74,7 @@ export default async function RedditPage({
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Today</div>
         <div className="mt-2 text-sm text-white/80">
           Comments sent today (ET): <span className="font-semibold text-white">{sentToday}</span>
@@ -82,7 +82,7 @@ export default async function RedditPage({
       </div>
 
       <form action={updateRedditSettingsAction} className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="surface p-4">
           <div className="text-xs uppercase tracking-wide text-white/60">Enabled</div>
           <label className="mt-3 flex items-center gap-3 text-sm">
             <input type="checkbox" name="enabled" defaultChecked={settings.enabled} className="h-4 w-4 accent-amber-400" />
@@ -115,7 +115,7 @@ export default async function RedditPage({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">Caps</div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <label className="block">
@@ -154,7 +154,7 @@ export default async function RedditPage({
             </label>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">CTA Target</div>
             <label className="mt-3 block">
               <div className="mb-1 text-xs text-white/60">X handle to DM</div>
@@ -172,7 +172,7 @@ export default async function RedditPage({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">Subreddits (allowlist)</div>
             <textarea
               name="subreddits"
@@ -184,7 +184,7 @@ export default async function RedditPage({
             <div className="mt-2 text-xs text-white/50">One subreddit per line. Comments only run in this list.</div>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+          <div className="surface p-4">
             <div className="text-xs uppercase tracking-wide text-white/60">CTA allowed subreddits</div>
             <textarea
               name="ctaAllowedSubreddits"
@@ -199,12 +199,12 @@ export default async function RedditPage({
           </div>
         </div>
 
-        <button className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
+        <button className="btn btn-primary px-4">
           Save Reddit settings
         </button>
       </form>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Recent Reddit comments (logged)</div>
         <div className="mt-3 space-y-2">
           {recent.length === 0 ? (

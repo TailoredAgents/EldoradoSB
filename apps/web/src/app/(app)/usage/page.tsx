@@ -22,7 +22,7 @@ export default async function UsagePage() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+      <div className="surface overflow-hidden">
         <div className="md:hidden">
           {rows.length === 0 ? (
             <div className="px-4 py-6 text-sm text-white/60">No usage recorded yet.</div>
@@ -59,8 +59,8 @@ export default async function UsagePage() {
         </div>
 
         <div className="hidden md:block">
-        <table className="w-full text-sm">
-          <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+        <table className="app-table">
+          <thead className="app-thead">
             <tr>
               <th className="px-4 py-3 text-left">Date</th>
               <th className="px-4 py-3 text-right">X post reads</th>
@@ -98,7 +98,7 @@ export default async function UsagePage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+      <div className="surface p-4">
         <div className="text-xs uppercase tracking-wide text-white/60">Recent worker runs</div>
         <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
           <div className="md:hidden">
@@ -143,8 +143,8 @@ export default async function UsagePage() {
           </div>
 
           <div className="hidden md:block">
-          <table className="w-full text-sm">
-            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+          <table className="app-table">
+            <thead className="app-thead">
               <tr>
                 <th className="px-3 py-2 text-left">Started</th>
                 <th className="px-3 py-2 text-left">Status</th>

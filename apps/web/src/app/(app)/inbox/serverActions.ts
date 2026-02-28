@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { prisma, XActionStatus, XActionType } from "@el-dorado/db";
+import { ConversationOutcomeTag, Prisma, prisma, XActionStatus, XActionType } from "@el-dorado/db";
 import { decryptToken, encryptToken, redactMessageText, requireEnv } from "@el-dorado/shared";
 import { requireAuth } from "@/lib/auth";
 
@@ -127,6 +127,55 @@ function parseUserId(value: FormDataEntryValue | null): string {
   return t;
 }
 
+function parsePlatform(value: FormDataEntryValue | null): "x" | "reddit" {
+  const t = String(value ?? "").trim();
+  if (t === "reddit") return "reddit";
+  return "x";
+}
+
+function parseThreadKey(value: FormDataEntryValue | null): string {
+  const t = String(value ?? "").trim();
+  if (!t) throw new Error("missing threadKey");
+  if (t.length > 200) throw new Error("threadKey too long");
+  return t;
+}
+
+function parseOutcomeTag(value: FormDataEntryValue | null): ConversationOutcomeTag {
+  const t = String(value ?? "").trim();
+  if (!t) throw new Error("missing tag");
+  if (!Object.values(ConversationOutcomeTag).includes(t as ConversationOutcomeTag)) throw new Error("invalid tag");
+  return t as ConversationOutcomeTag;
+}
+
+function parseOptionalInt(value: FormDataEntryValue | null, max: number): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) throw new Error("invalid integer");
+  const i = Math.floor(n);
+  if (i < 0 || i > max) throw new Error("integer out of range");
+  return i;
+}
+
+function parseOptionalFloat(value: FormDataEntryValue | null, max: number): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) throw new Error("invalid number");
+  if (n < 0 || n > max) throw new Error("number out of range");
+  return n;
+}
+
+function isObj(x: unknown): x is Record<string, unknown> {
+  return Boolean(x) && typeof x === "object";
+}
+
+function metaString(meta: unknown, key: string): string | null {
+  if (!isObj(meta)) return null;
+  const v = meta[key];
+  return typeof v === "string" ? v : null;
+}
+
 export async function sendManualXDmAction(formData: FormData) {
   await requireAuth();
 
@@ -175,3 +224,54 @@ export async function sendManualXDmAction(formData: FormData) {
   redirect(`/inbox?t=${encodeURIComponent(threadKey)}`);
 }
 
+export async function logConversationOutcomeAction(formData: FormData) {
+  await requireAuth();
+
+  const platform = parsePlatform(formData.get("platform"));
+  const threadKey = parseThreadKey(formData.get("threadKey"));
+  const userIdRaw = String(formData.get("userId") ?? "").trim() || null;
+  const userId = userIdRaw ? userIdRaw : null;
+  const tag = parseOutcomeTag(formData.get("tag"));
+  const depositors = parseOptionalInt(formData.get("depositors"), 100000);
+  const depositsUsd = parseOptionalFloat(formData.get("depositsUsd"), 1_000_000_000);
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 4000) || null;
+
+  const recent = await prisma.conversationMessage.findMany({
+    where: { platform, threadKey },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: { meta: true, createdAt: true },
+  });
+
+  const picked =
+    recent.find((r) => {
+      const m = r.meta;
+      return Boolean(
+        metaString(m, "trackingLinkId") ||
+          metaString(m, "trackingToken") ||
+          metaString(m, "linkBucket") ||
+          metaString(m, "linkSource") ||
+          metaString(m, "msgTemplateKey") ||
+          metaString(m, "followUpTemplateKey"),
+      );
+    }) ?? recent[0] ?? null;
+
+  const meta = picked?.meta ?? null;
+  const trackingLinkId = metaString(meta, "trackingLinkId");
+
+  await prisma.conversationOutcome.create({
+    data: {
+      platform,
+      threadKey,
+      userId,
+      tag,
+      depositors,
+      depositsUsd,
+      notes,
+      trackingLinkId: trackingLinkId || null,
+      meta: meta == null ? undefined : (meta as Prisma.InputJsonValue),
+    },
+  });
+
+  redirect(`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(threadKey)}&ok=1`);
+}

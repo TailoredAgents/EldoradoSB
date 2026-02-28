@@ -327,6 +327,35 @@ type XUsersLookupResponse = {
   data?: XUser[];
 };
 
+async function upsertExternalUsersFromX(args: { userIds: string[] }) {
+  const ids = Array.from(new Set(args.userIds.map((x) => String(x ?? "").trim()).filter(Boolean))).filter((x) => /^\d{2,30}$/.test(x));
+  if (ids.length === 0) return;
+  if (!process.env.X_BEARER_TOKEN) return;
+
+  try {
+    const x = new XClient({ bearerToken: getBearerTokenFromEnv(), minDelayMs: 1200, maxRetries: 2 });
+    const res = await x.getJson<XUsersLookupResponse>("users", {
+      ids: ids.slice(0, 100).join(","),
+      "user.fields": ["username", "name"].join(","),
+    });
+
+    const users = res.data.data ?? [];
+    if (users.length === 0) return;
+
+    await prisma.$transaction(
+      users.map((u) =>
+        prisma.externalUser.upsert({
+          where: { platform_userId: { platform: "x", userId: String(u.id) } },
+          create: { platform: "x", userId: String(u.id), handle: u.username ?? null, name: u.name ?? null },
+          update: { handle: u.username ?? null, name: u.name ?? null },
+        }),
+      ),
+    );
+  } catch {
+    // best-effort
+  }
+}
+
 async function upsertProspectForAmbassadorLead(args: {
   xUserId: string;
   note: string;
@@ -601,6 +630,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
     // Store inbound messages (redacted) so Devon can reply manually and export later.
     try {
+      await upsertExternalUsersFromX({ userIds: events.map((e) => (e as XDmEvent).sender_id ?? "").filter(Boolean) });
+
       const inboundToInsert = events
         .map((e) => e as XDmEvent)
         .filter((ev) => Boolean(ev.id && ev.sender_id && ev.text))

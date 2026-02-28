@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@el-dorado/db";
-import { sendManualXDmAction } from "./serverActions";
+import { logConversationOutcomeAction, sendManualXDmAction } from "./serverActions";
 import { QuickReplyComposer } from "@/components/QuickReplyComposer";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +22,10 @@ function metaString(meta: unknown, key: string): string | null {
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams?: { t?: string; p?: string };
+  searchParams?: { t?: string; p?: string; ok?: string };
 }) {
   const platform = searchParams?.p === "reddit" ? "reddit" : "x";
+  const ok = searchParams?.ok === "1";
 
   const xSettings =
     platform === "x"
@@ -44,6 +45,30 @@ export default async function InboxPage({
     orderBy: { _max: { createdAt: "desc" } },
     take: 50,
   });
+
+  const threadUserIds = Array.from(new Set(threads.map((t) => t.userId).filter((x): x is string => Boolean(x))));
+  const users =
+    threadUserIds.length > 0
+      ? await prisma.externalUser.findMany({
+          where: { platform, userId: { in: threadUserIds } },
+          select: { userId: true, handle: true, name: true },
+        })
+      : [];
+  const userById = new Map(users.map((u) => [u.userId, { handle: u.handle, name: u.name }]));
+
+  const threadKeys = threads.map((t) => t.threadKey);
+  const latestOutcomes = threadKeys.length
+    ? await prisma.conversationOutcome.findMany({
+        where: { platform, threadKey: { in: threadKeys } },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: { threadKey: true, tag: true, createdAt: true },
+      })
+    : [];
+  const latestOutcomeByThread = new Map<string, { tag: string; createdAt: Date }>();
+  for (const o of latestOutcomes) {
+    if (!latestOutcomeByThread.has(o.threadKey)) latestOutcomeByThread.set(o.threadKey, { tag: o.tag, createdAt: o.createdAt });
+  }
 
   const threadKey =
     typeof searchParams?.t === "string"
@@ -73,6 +98,18 @@ export default async function InboxPage({
     threads.find((t) => t.threadKey === threadKey)?.userId ??
     (threadKey?.startsWith("reddit_dm:") ? threadKey.slice("reddit_dm:".length) : "");
 
+  const selectedExternal = platform === "x" && selectedUserId ? userById.get(selectedUserId) ?? null : null;
+  const selectedLabel =
+    platform === "x"
+      ? selectedExternal?.handle
+        ? `@${selectedExternal.handle}`
+        : selectedUserId
+          ? `x user ${selectedUserId}`
+          : threadKey ?? ""
+      : selectedRedditUser
+        ? `u/${selectedRedditUser}`
+        : threadKey ?? "";
+
   const lastLinkMsg =
     platform === "x"
       ? [...messages]
@@ -96,6 +133,15 @@ export default async function InboxPage({
           where: { trackingLinkId, createdAt: { gte: linkSentAt } },
         })
       : 0;
+
+  const outcomes = threadKey
+    ? await prisma.conversationOutcome.findMany({
+        where: { platform, threadKey },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: { id: true, createdAt: true, tag: true, depositors: true, depositsUsd: true, notes: true },
+      })
+    : [];
 
   const manualThreads =
     platform === "x"
@@ -142,6 +188,12 @@ export default async function InboxPage({
           </div>
         </div>
 
+        {ok ? (
+          <div className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+            Outcome saved.
+          </div>
+        ) : null}
+
         {manualThreads.length > 0 ? (
           <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/10 p-3">
             <div className="text-xs font-semibold text-amber-200">Needs manual reply</div>
@@ -152,7 +204,8 @@ export default async function InboxPage({
                   href={`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(t.threadKey)}`}
                   className="block text-xs text-amber-100/90 hover:underline"
                 >
-                  {t.threadKey} · {formatTs(t.createdAt)}
+                  {userById.get(t.userId)?.handle ? `@${userById.get(t.userId)!.handle}` : t.threadKey} ·{" "}
+                  {formatTs(t.createdAt)}
                 </Link>
               ))}
             </div>
@@ -166,15 +219,32 @@ export default async function InboxPage({
             threads.map((t) => (
               <Link
                 key={t.threadKey}
-                href={`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(t.threadKey)}`}
-                className={`block rounded-md px-3 py-2 text-sm ${
-                  t.threadKey === threadKey ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/5"
-                }`}
-              >
-                <div className="truncate font-medium">{t.threadKey}</div>
-                <div className="text-xs text-white/60">{t._max.createdAt ? formatTs(t._max.createdAt) : ""}</div>
-              </Link>
-            ))
+                  href={`/inbox?p=${encodeURIComponent(platform)}&t=${encodeURIComponent(t.threadKey)}`}
+                  className={`block rounded-md px-3 py-2 text-sm ${
+                    t.threadKey === threadKey ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="truncate font-medium">
+                      {platform === "x"
+                        ? t.userId && userById.get(t.userId)?.handle
+                          ? `@${userById.get(t.userId)!.handle}`
+                          : t.userId
+                            ? `x user ${t.userId}`
+                            : t.threadKey
+                        : t.userId
+                          ? `u/${t.userId}`
+                          : t.threadKey}
+                    </div>
+                    {latestOutcomeByThread.get(t.threadKey)?.tag ? (
+                      <span className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/60">
+                        {latestOutcomeByThread.get(t.threadKey)!.tag.replace(/_/g, " ")}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-0.5 text-xs text-white/60">{t._max.createdAt ? formatTs(t._max.createdAt) : ""}</div>
+                </Link>
+              ))
           )}
         </div>
       </section>
@@ -186,7 +256,7 @@ export default async function InboxPage({
           <>
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">{threadKey}</div>
+                <div className="text-sm font-semibold">{selectedLabel}</div>
                 <div className="text-xs text-white/60">Messages shown: {messages.length}</div>
                 {trackingLinkId ? (
                   <div className="mt-1 text-xs text-white/60">
@@ -216,6 +286,103 @@ export default async function InboxPage({
                 >
                   Open in Reddit
                 </a>
+              ) : null}
+            </div>
+
+            <div className="mb-4 rounded-lg border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-white/60">Outcome</div>
+                  <div className="mt-1 text-xs text-white/50">
+                    Log what happened for this conversation (Devon-friendly; no tokens required).
+                  </div>
+                </div>
+                {outcomes[0] ? (
+                  <div className="text-xs text-white/60">
+                    Latest: <span className="text-white/80">{outcomes[0].tag.replace(/_/g, " ")}</span>{" "}
+                    <span className="text-white/40">· {formatTs(outcomes[0].createdAt)}</span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-white/60">No outcomes logged yet.</div>
+                )}
+              </div>
+
+              <form
+                action={logConversationOutcomeAction}
+                className="mt-3 grid gap-3 md:grid-cols-[220px_120px_140px_1fr_auto]"
+              >
+                <input type="hidden" name="platform" value={platform} />
+                <input type="hidden" name="threadKey" value={threadKey} />
+                <input
+                  type="hidden"
+                  name="userId"
+                  value={platform === "x" ? selectedUserId : selectedRedditUser}
+                />
+
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Result</div>
+                  <select name="tag" className="app-select">
+                    <option value="deposit_confirmed">Deposit confirmed</option>
+                    <option value="asked_fee">Asked for fee</option>
+                    <option value="declined">Declined</option>
+                    <option value="no_response">No response</option>
+                    <option value="support_needed">Support needed</option>
+                    <option value="ambassador_interested">Ambassador interested</option>
+                    <option value="do_not_contact">Do not contact</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Depositors</div>
+                  <input name="depositors" inputMode="numeric" placeholder="1" className="app-input" />
+                </label>
+
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Deposits ($)</div>
+                  <input name="depositsUsd" inputMode="decimal" placeholder="100" className="app-input" />
+                </label>
+
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Notes</div>
+                  <input name="notes" placeholder="Optional context…" className="app-input" />
+                </label>
+
+                <div className="flex items-end justify-end">
+                  <button type="submit" className="btn btn-primary px-4">
+                    Save
+                  </button>
+                </div>
+              </form>
+
+              {outcomes.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {outcomes.map((o) => (
+                    <div
+                      key={o.id}
+                      className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-white/70"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="font-medium text-white/80">{o.tag.replace(/_/g, " ")}</div>
+                        <div className="text-white/50">{formatTs(o.createdAt)}</div>
+                      </div>
+                      {o.depositors != null || o.depositsUsd != null || o.notes ? (
+                        <div className="mt-1 text-white/60">
+                          {o.depositors != null ? <span>depositors {o.depositors}</span> : null}
+                          {o.depositsUsd != null ? (
+                            <span>{o.depositors != null ? " · " : ""}${o.depositsUsd.toFixed(2)}</span>
+                          ) : null}
+                          {o.notes ? (
+                            <span>
+                              {o.depositors != null || o.depositsUsd != null ? " · " : ""}
+                              {o.notes}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
               ) : null}
             </div>
 

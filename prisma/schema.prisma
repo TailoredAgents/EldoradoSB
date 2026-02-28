@@ -67,6 +67,17 @@ enum XHandledItemStatus {
   error
 }
 
+enum ConversationOutcomeTag {
+  no_response
+  asked_fee
+  declined
+  deposit_confirmed
+  ambassador_interested
+  support_needed
+  do_not_contact
+  other
+}
+
 model Prospect {
   id        String         @id @default(cuid())
   createdAt DateTime       @default(now())
@@ -271,6 +282,7 @@ model TrackingLink {
   campaignId String
 
   clickEvents ClickEvent[]
+  conversationOutcomes ConversationOutcome[]
 
   @@index([campaignId])
 }
@@ -404,6 +416,50 @@ model ConversationMessage {
   @@index([createdAt])
   @@index([platform, threadKey, createdAt])
   @@index([platform, userId, createdAt])
+}
+
+model ConversationOutcome {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  platform  String
+  threadKey String
+  userId    String?
+
+  tag ConversationOutcomeTag
+
+  depositors  Int?
+  depositsUsd Float?
+  notes       String?
+
+  trackingLink   TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  trackingLinkId String?
+
+  // Snapshot attribution when logged (tier/bucket/source/template keys, etc).
+  meta Json?
+
+  @@index([platform, threadKey, createdAt])
+  @@index([platform, tag, createdAt])
+  @@index([platform, userId, createdAt])
+  @@index([trackingLinkId])
+}
+
+model ExternalUser {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  platform String
+  userId   String
+
+  handle String?
+  name   String?
+
+  meta Json?
+
+  @@unique([platform, userId])
+  @@index([platform, handle])
 }
 
 model HandledItem {

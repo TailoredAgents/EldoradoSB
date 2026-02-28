@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
-import { prisma, Prisma, XActionStatus, XActionType, XHandledItemType } from "@el-dorado/db";
+import { OutreachChannel, ProspectStatus, prisma, Prisma, XActionStatus, XActionType, XHandledItemType } from "@el-dorado/db";
 import { ensureAccessToken } from "./credentials";
 import { getMe, getMentions } from "./oauthRead";
 import { replyToTweet } from "./write";
 import { listDmEvents, sendDm, type XDmEvent } from "./dm";
 import { getAppTimeZone, startOfDayApp, startOfNextDayApp } from "../time";
 import { markHandledItemDone, markHandledItemError, reserveHandledItem } from "./handled";
+import { XClient, getBearerTokenFromEnv } from "./client";
+import type { XUser } from "./types";
 
 type InboundResult =
   | { status: "skipped"; reason: string }
@@ -151,6 +153,13 @@ function makeHelpMessage(args: { url: string; disclaimer: string }): string {
   );
 }
 
+function makeAmbassadorThanksMessage(args: { disclaimer: string }): string {
+  return clampText(
+    `Got it — thanks for the details. We’ll review and follow up shortly.\n\nIf you also want the signup link + 200% match, DM LINK GEN.\n\n${args.disclaimer}`,
+    900,
+  );
+}
+
 async function getOrCreateDefaultCampaignId(): Promise<string> {
   const name = "X - LINK replies";
   const existing = await prisma.campaign.findFirst({
@@ -219,6 +228,62 @@ async function countAutoRepliesToday(args: { dayStart: Date; dayEnd: Date }) {
       reason: { contains: "auto_reply" },
     },
   });
+}
+
+type XUsersLookupResponse = {
+  data?: XUser[];
+};
+
+async function upsertProspectForAmbassadorLead(args: {
+  xUserId: string;
+  note: string;
+}): Promise<string | null> {
+  let user: XUser | null = null;
+
+  if (process.env.X_BEARER_TOKEN) {
+    try {
+      const x = new XClient({ bearerToken: getBearerTokenFromEnv(), minDelayMs: 1200, maxRetries: 2 });
+      const res = await x.getJson<XUsersLookupResponse>("users", {
+        ids: args.xUserId,
+        "user.fields": ["username", "name", "description", "location", "url", "verified", "public_metrics"].join(","),
+      });
+      user = res.data.data?.[0] ?? null;
+    } catch {
+      user = null;
+    }
+  }
+
+  const handle = user?.username ? String(user.username) : `user_${args.xUserId}`;
+
+  const prospect = await prisma.prospect.upsert({
+    where: { xUserId: args.xUserId },
+    create: {
+      xUserId: args.xUserId,
+      handle,
+      name: user?.name ?? null,
+      bio: user?.description ?? null,
+      url: user?.url ?? null,
+      location: user?.location ?? null,
+      followers: user?.public_metrics?.followers_count ?? null,
+      verified: user?.verified ?? null,
+      status: ProspectStatus.new,
+      tier: "ambassador",
+      notes: args.note,
+    },
+    update: {
+      handle,
+      name: user?.name ?? null,
+      bio: user?.description ?? null,
+      url: user?.url ?? null,
+      location: user?.location ?? null,
+      followers: user?.public_metrics?.followers_count ?? null,
+      verified: user?.verified ?? null,
+      status: ProspectStatus.replied,
+    },
+    select: { id: true },
+  });
+
+  return prospect.id;
 }
 
 export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: number }): Promise<InboundResult> {
@@ -416,6 +481,29 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
   // DMs: send menu / link / ambassador intake.
   // If DM endpoints are unavailable for your app/tier, errors will be logged by caller.
   if (repliesSent + dmsSent < remaining) {
+    const ambassadorStateSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const recentDmLogs = await prisma.xActionLog.findMany({
+      where: {
+        actionType: XActionType.dm,
+        status: XActionStatus.success,
+        reason: "auto_reply:dm",
+        createdAt: { gte: ambassadorStateSince },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      select: { createdAt: true, meta: true },
+    });
+
+    const lastAmbassadorPromptAtByUserId = new Map<string, Date>();
+    for (const r of recentDmLogs) {
+      const targetUserId = metaString(r.meta, "targetUserId");
+      if (!targetUserId) continue;
+      if (lastAmbassadorPromptAtByUserId.has(targetUserId)) continue;
+      const intent = metaString(r.meta, "intent");
+      if (intent !== "ambassador") continue;
+      lastAmbassadorPromptAtByUserId.set(targetUserId, r.createdAt);
+    }
+
     const dmRes = await listDmEvents({ accessToken, maxResults: 20 });
     const events = dmRes.data ?? [];
     dmsScanned = events.length;
@@ -434,7 +522,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
           ? "link"
           : isAmbassadorIntent(event.text)
             ? "ambassador"
-            : "menu";
+            : lastAmbassadorPromptAtByUserId.has(event.sender_id)
+              ? "ambassador_answers"
+              : "menu";
 
       const linkCode = intent === "link" ? parseLinkCode(event.text) : null;
       const linkSource = intent === "link" || intent === "help" ? (parseSourceTag(event.text) ?? "unknown") : "none";
@@ -503,10 +593,12 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
         intent === "help"
           ? makeHelpMessage({ url: linkUrl ?? destinationUrl, disclaimer })
           : intent === "link"
-          ? makeLinkMessage({ url: linkUrl ?? destinationUrl, disclaimer })
-          : intent === "ambassador"
-            ? makeAmbassadorQuestions({ disclaimer })
-            : makeMenuMessage({ disclaimer });
+            ? makeLinkMessage({ url: linkUrl ?? destinationUrl, disclaimer })
+            : intent === "ambassador_answers"
+              ? makeAmbassadorThanksMessage({ disclaimer })
+            : intent === "ambassador"
+              ? makeAmbassadorQuestions({ disclaimer })
+              : makeMenuMessage({ disclaimer });
 
       if (args.dryRun) {
         await prisma.xActionLog.create({
@@ -539,6 +631,33 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       if (!reserved) continue;
 
       try {
+        let ambassadorProspectId: string | null = null;
+        if (intent === "ambassador" || intent === "ambassador_answers") {
+          try {
+            ambassadorProspectId = await upsertProspectForAmbassadorLead({
+              xUserId: event.sender_id,
+              note:
+                intent === "ambassador"
+                  ? `Inbound AMBASSADOR DM (questions sent).\n\nMessage:\n${event.text}`
+                  : `Inbound AMBASSADOR answers.\n\nMessage:\n${event.text}`,
+            });
+
+            if (ambassadorProspectId) {
+              await prisma.outreachEvent.create({
+                data: {
+                  prospectId: ambassadorProspectId,
+                  channel: OutreachChannel.dm,
+                  eventType: intent === "ambassador" ? "ambassador_inbound" : "ambassador_answers",
+                  notes: event.text,
+                },
+                select: { id: true },
+              });
+            }
+          } catch {
+            // ignore: best-effort CRM logging
+          }
+        }
+
         const sent = await sendDm({
           accessToken,
           participantId: event.sender_id,

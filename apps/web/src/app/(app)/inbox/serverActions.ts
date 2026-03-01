@@ -229,6 +229,13 @@ function parseThreadKey(value: FormDataEntryValue | null): string {
   return t;
 }
 
+function parseOptionalKey(value: FormDataEntryValue | null, max = 80): string | null {
+  const t = String(value ?? "").trim();
+  if (!t) return null;
+  const safe = t.replace(/[^a-zA-Z0-9:_-]+/g, "_").slice(0, max);
+  return safe || null;
+}
+
 function parseOutcomeTag(value: FormDataEntryValue | null): ConversationOutcomeTag {
   const t = String(value ?? "").trim();
   if (!t) throw new Error("missing tag");
@@ -271,6 +278,7 @@ export async function sendManualXDmAction(formData: FormData) {
   const userId = parseUserId(formData.get("userId"));
   const threadKey = String(formData.get("threadKey") ?? `x_dm:${userId}`).trim() || `x_dm:${userId}`;
   const text = parseText(formData.get("text"));
+  const playbookKey = parseOptionalKey(formData.get("playbookKey"));
 
   try {
     const accessToken = await ensureAccessToken();
@@ -284,7 +292,7 @@ export async function sendManualXDmAction(formData: FormData) {
         status: XActionStatus.success,
         reason: "manual:dm_send",
         xId: sent.data?.dm_event_id ?? null,
-        meta: { targetUserId: userId, threadKey, text: redactMessageText(text) },
+        meta: { targetUserId: userId, threadKey, playbookKey, text: redactMessageText(text) },
       },
     });
 
@@ -296,7 +304,7 @@ export async function sendManualXDmAction(formData: FormData) {
         direction: "outbound",
         userId,
         text: redactMessageText(text),
-        meta: { reason: "manual:dm_send" },
+        meta: { reason: "manual:dm_send", playbookKey },
       },
     });
   } catch (err) {
@@ -334,6 +342,7 @@ export async function sendManualRedditDmAction(formData: FormData) {
     String(formData.get("threadKey") ?? `reddit_dm:${username}`).trim() || `reddit_dm:${username}`;
   const subject = parseOptionalSubject(formData.get("subject"));
   const text = parseText(formData.get("text"));
+  const playbookKey = parseOptionalKey(formData.get("playbookKey"));
 
   try {
     await sendRedditDm({ username, subject, text });
@@ -352,7 +361,7 @@ export async function sendManualRedditDmAction(formData: FormData) {
         direction: "outbound",
         userId: username,
         text: redactMessageText(text),
-        meta: { reason: "manual:dm_send", subject } as Prisma.InputJsonValue,
+        meta: { reason: "manual:dm_send", subject, playbookKey } as Prisma.InputJsonValue,
       },
     });
 
@@ -369,6 +378,7 @@ export async function sendManualRedditDmAction(formData: FormData) {
         meta: {
           reason: "manual:dm_send_error",
           subject,
+          playbookKey,
           error: err instanceof Error ? err.message : String(err),
         } as Prisma.InputJsonValue,
       },

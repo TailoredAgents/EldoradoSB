@@ -5,6 +5,9 @@ import { QuickReplyComposer } from "@/components/QuickReplyComposer";
 
 export const dynamic = "force-dynamic";
 
+type Playbook = { key: string; label: string; text: string; enabled?: boolean };
+type Playbooks = { x: Playbook[]; reddit: Playbook[] };
+
 function formatTs(d: Date) {
   return d.toISOString().replace("T", " ").slice(0, 19);
 }
@@ -19,6 +22,22 @@ function metaString(meta: unknown, key: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
+function readPlaybooks(templates: unknown): Playbooks | null {
+  if (!isObj(templates) || !isObj(templates.playbooks)) return null;
+  const pb = templates.playbooks as Record<string, unknown>;
+  const x = Array.isArray(pb.x) ? (pb.x as Playbook[]) : [];
+  const reddit = Array.isArray(pb.reddit) ? (pb.reddit as Playbook[]) : [];
+  return { x, reddit };
+}
+
+function applyPlaceholders(text: string, vars: Record<string, string>): string {
+  let out = String(text ?? "");
+  for (const [k, v] of Object.entries(vars)) {
+    out = out.split(`{{${k}}}`).join(v);
+  }
+  return out;
+}
+
 export default async function InboxPage({
   searchParams,
 }: {
@@ -27,16 +46,101 @@ export default async function InboxPage({
   const platform = searchParams?.p === "reddit" ? "reddit" : "x";
   const ok = searchParams?.ok === "1";
 
-  const xSettings =
-    platform === "x"
-      ? await prisma.xAccountSettings.findUnique({
-          where: { id: 1 },
-          select: { disclaimerText: true },
-        })
-      : null;
+  const xSettings = await prisma.xAccountSettings.findUnique({
+    where: { id: 1 },
+    select: { disclaimerText: true },
+  });
+
+  const appSettings = await prisma.settings.findUnique({
+    where: { id: 1 },
+    select: { disclaimerText: true, templates: true },
+  });
+
   const disclaimer =
+    (appSettings?.disclaimerText && String(appSettings.disclaimerText).trim()) ||
     (xSettings?.disclaimerText && String(xSettings.disclaimerText).trim()) ||
     "21+ | Terms apply | Gamble responsibly";
+
+  const redditSettings =
+    platform === "reddit"
+      ? await prisma.redditAccountSettings.findUnique({ where: { id: 1 }, select: { config: true } })
+      : null;
+
+  const xHandle = (() => {
+    if (!isObj(redditSettings?.config)) return "EldoradoSB";
+    const raw = redditSettings!.config as Record<string, unknown>;
+    const v = raw.xHandle;
+    const t = typeof v === "string" ? v.trim() : "";
+    return t || "EldoradoSB";
+  })();
+
+  const playbooks = readPlaybooks(appSettings?.templates ?? null);
+
+  const defaultXTemplates = [
+    {
+      label: "Ask LINK PAYOUT",
+      key: "x_ask_link_payout",
+      text: `If you want the signup link + 200% match, reply "LINK PAYOUT" and I’ll send it.\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Ask LINK PICKS",
+      key: "x_ask_link_picks",
+      text: `If you want the signup link + 200% match, reply "LINK PICKS" and I’ll send it.\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Ask LINK GEN",
+      key: "x_ask_link_gen",
+      text: `If you want the signup link + 200% match, reply "LINK GEN" and I’ll send it.\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Help prompt",
+      key: "x_help_prompt",
+      text: `If you’re stuck depositing, reply HELP and tell me which method you’re using (Cash App/Venmo/Zelle/PayPal/Apple Pay/crypto).\n\n{{disclaimer}}`,
+    },
+  ];
+
+  const defaultRedditTemplates = [
+    {
+      label: "Ask DM on X (PAYOUT)",
+      key: "rd_ask_x_link_payout",
+      text: `If you want our signup link + 200% match, DM @{{x_handle}} on X with "LINK PAYOUT REDDIT".\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Ask DM on X (PICKS)",
+      key: "rd_ask_x_link_picks",
+      text: `If you want our signup link + 200% match, DM @{{x_handle}} on X with "LINK PICKS REDDIT".\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Ask DM on X (GEN)",
+      key: "rd_ask_x_link_gen",
+      text: `If you want our signup link + 200% match, DM @{{x_handle}} on X with "LINK GEN REDDIT".\n\n{{disclaimer}}`,
+    },
+    {
+      label: "Value only",
+      key: "rd_value_only",
+      text: `Totally fair. Quick tip: start small, track every bet, and don’t scale until you’ve proven you can withdraw cleanly.\n\n{{disclaimer}}`,
+    },
+  ];
+
+  const resolvedTemplates =
+    platform === "x"
+      ? (playbooks?.x ?? []).filter((t) => t?.enabled !== false).map((t) => ({
+          label: String(t.label ?? t.key),
+          key: String(t.key ?? t.label),
+          text: applyPlaceholders(String(t.text ?? ""), { disclaimer, x_handle: xHandle }),
+        }))
+      : (playbooks?.reddit ?? []).filter((t) => t?.enabled !== false).map((t) => ({
+          label: String(t.label ?? t.key),
+          key: String(t.key ?? t.label),
+          text: applyPlaceholders(String(t.text ?? ""), { disclaimer, x_handle: xHandle }),
+        }));
+
+  const templatesForComposer =
+    resolvedTemplates.length > 0
+      ? resolvedTemplates
+      : platform === "x"
+        ? defaultXTemplates.map((t) => ({ ...t, text: applyPlaceholders(t.text, { disclaimer, x_handle: xHandle }) }))
+        : defaultRedditTemplates.map((t) => ({ ...t, text: applyPlaceholders(t.text, { disclaimer, x_handle: xHandle }) }));
 
   const threads = await prisma.conversationMessage.groupBy({
     by: ["threadKey", "userId"],
@@ -415,25 +519,9 @@ export default async function InboxPage({
                 <input type="hidden" name="threadKey" value={threadKey} />
                 <QuickReplyComposer
                   name="text"
+                  keyName="playbookKey"
                   placeholder="Devon reply (manual). Keep it human and concise."
-                  templates={[
-                    {
-                      label: "Ask LINK PAYOUT",
-                      text: `If you want the signup link + 200% match, reply "LINK PAYOUT" and I’ll send it.\n\n${disclaimer}`,
-                    },
-                    {
-                      label: "Ask LINK PICKS",
-                      text: `If you want the signup link + 200% match, reply "LINK PICKS" and I’ll send it.\n\n${disclaimer}`,
-                    },
-                    {
-                      label: "Ask LINK GEN",
-                      text: `If you want the signup link + 200% match, reply "LINK GEN" and I’ll send it.\n\n${disclaimer}`,
-                    },
-                    {
-                      label: "Help prompt",
-                      text: `If you’re stuck depositing, reply HELP and tell me which method you’re using (Cash App/Venmo/Zelle/PayPal/Apple Pay/crypto).\n\n${disclaimer}`,
-                    },
-                  ]}
+                  templates={templatesForComposer}
                 />
                 <div className="flex items-center justify-end gap-2">
                   <button
@@ -454,25 +542,9 @@ export default async function InboxPage({
                 </label>
                 <QuickReplyComposer
                   name="text"
+                  keyName="playbookKey"
                   placeholder="Devon reply (manual). Value first; keep it human and concise."
-                  templates={[
-                    {
-                      label: "Ask DM on X (PAYOUT)",
-                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK PAYOUT REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
-                    },
-                    {
-                      label: "Ask DM on X (PICKS)",
-                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK PICKS REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
-                    },
-                    {
-                      label: "Ask DM on X (GEN)",
-                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK GEN REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
-                    },
-                    {
-                      label: "Value only",
-                      text: `Totally fair. Quick tip: start small, track every bet, and don’t scale until you’ve proven you can withdraw cleanly.\n\n21+ | Terms apply | Gamble responsibly`,
-                    },
-                  ]}
+                  templates={templatesForComposer}
                 />
                 <div className="flex items-center justify-between gap-2">
                   <a

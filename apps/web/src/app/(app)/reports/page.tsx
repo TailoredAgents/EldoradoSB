@@ -27,6 +27,11 @@ export default async function ReportsPage() {
     return typeof v === "boolean" ? v : null;
   };
 
+  const metaIsManual = (meta: unknown): boolean => {
+    const reason = metaString(meta, "reason") ?? "";
+    return reason.startsWith("manual:");
+  };
+
   const clickAgg30 = await prisma.clickEvent.groupBy({
     by: ["trackingLinkId"],
     where: { createdAt: { gte: since30 } },
@@ -319,6 +324,39 @@ export default async function ReportsPage() {
     take: 30,
     include: { campaign: { select: { id: true, name: true, type: true } } },
   });
+
+  const manualOutbound30 = await prisma.conversationMessage.findMany({
+    where: { direction: "outbound", createdAt: { gte: since30 }, platform: { in: ["x", "reddit"] } },
+    orderBy: { createdAt: "desc" },
+    take: 20000,
+    select: { platform: true, meta: true, createdAt: true },
+  });
+
+  const manualByPlaybook30 = new Map<string, number>();
+  const manualByPlaybook7 = new Map<string, number>();
+
+  for (const m of manualOutbound30) {
+    if (!metaIsManual(m.meta)) continue;
+    const playbookKey = metaString(m.meta, "playbookKey") ?? "custom";
+    const key = `${m.platform}::${playbookKey}`;
+    manualByPlaybook30.set(key, (manualByPlaybook30.get(key) ?? 0) + 1);
+    if (m.createdAt >= since7) manualByPlaybook7.set(key, (manualByPlaybook7.get(key) ?? 0) + 1);
+  }
+
+  const manualPlaybookRows = Array.from(manualByPlaybook30.entries())
+    .map(([key, sent30]) => {
+      const idx = key.indexOf("::");
+      const platform = idx >= 0 ? key.slice(0, idx) : "unknown";
+      const playbookKey = idx >= 0 ? key.slice(idx + 2) : key;
+      return {
+        platform,
+        playbookKey,
+        sent30,
+        sent7: manualByPlaybook7.get(key) ?? 0,
+      };
+    })
+    .sort((a, b) => (b.sent30 - a.sent30) || a.playbookKey.localeCompare(b.playbookKey))
+    .slice(0, 16);
 
   const campaigns = await prisma.campaign.findMany({
     where: { active: true },
@@ -913,6 +951,47 @@ export default async function ReportsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="surface p-4">
+        <div className="text-xs uppercase tracking-wide text-white/60">Devon manual replies (30d)</div>
+        <div className="mt-1 text-xs text-white/50">
+          Counts of manual outbound messages by playbook key (from Inbox).
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+              <tr>
+                <th className="px-3 py-2 text-left">Platform</th>
+                <th className="px-3 py-2 text-left">Playbook</th>
+                <th className="px-3 py-2 text-right">Sent (7d)</th>
+                <th className="px-3 py-2 text-right">Sent (30d)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {manualPlaybookRows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-white/60" colSpan={4}>
+                    No manual replies logged yet.
+                  </td>
+                </tr>
+              ) : (
+                manualPlaybookRows.map((r) => (
+                  <tr key={`${r.platform}::${r.playbookKey}`} className="hover:bg-white/5">
+                    <td className="px-3 py-2 font-mono text-xs text-white/80">{r.platform}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-white/70">{r.playbookKey}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.sent7}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.sent30}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 text-xs text-white/50">
+          Edit playbooks in <span className="font-mono">/templates</span> (Devon playbooks section).
         </div>
       </div>
 

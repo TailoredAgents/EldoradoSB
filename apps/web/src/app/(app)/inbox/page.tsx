@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@el-dorado/db";
-import { logConversationOutcomeAction, sendManualXDmAction } from "./serverActions";
+import { logConversationOutcomeAction, sendManualRedditDmAction, sendManualXDmAction } from "./serverActions";
 import { QuickReplyComposer } from "@/components/QuickReplyComposer";
 
 export const dynamic = "force-dynamic";
@@ -439,18 +439,52 @@ export default async function InboxPage({
                 </div>
               </form>
             ) : platform === "reddit" && selectedRedditUser ? (
-              <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-white/70">
-                Reply on Reddit for now (manual):{" "}
-                <a
-                  className="text-white/80 underline hover:text-white"
-                  href="https://www.reddit.com/message/inbox/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  open inbox
-                </a>
-                .
-              </div>
+              <form action={sendManualRedditDmAction} className="mt-4 space-y-2">
+                <input type="hidden" name="username" value={selectedRedditUser} />
+                <input type="hidden" name="threadKey" value={threadKey} />
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Subject (optional)</div>
+                  <input name="subject" className="app-input" placeholder="Re:" />
+                </label>
+                <QuickReplyComposer
+                  name="text"
+                  placeholder="Devon reply (manual). Value first; keep it human and concise."
+                  templates={[
+                    {
+                      label: "Ask DM on X (PAYOUT)",
+                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK PAYOUT REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
+                    },
+                    {
+                      label: "Ask DM on X (PICKS)",
+                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK PICKS REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
+                    },
+                    {
+                      label: "Ask DM on X (GEN)",
+                      text: `If you want our signup link + 200% match, DM @EldoradoSB on X with \"LINK GEN REDDIT\".\n\n21+ | Terms apply | Gamble responsibly`,
+                    },
+                    {
+                      label: "Value only",
+                      text: `Totally fair. Quick tip: start small, track every bet, and don’t scale until you’ve proven you can withdraw cleanly.\n\n21+ | Terms apply | Gamble responsibly`,
+                    },
+                  ]}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <a
+                    className="text-xs text-white/60 hover:text-white"
+                    href="https://www.reddit.com/message/inbox/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Reddit inbox
+                  </a>
+                  <button type="submit" className="btn btn-primary px-4">
+                    Send Reddit DM
+                  </button>
+                </div>
+                <div className="text-xs text-white/50">
+                  Requires Reddit env vars to be set in Render when you enable it.
+                </div>
+              </form>
             ) : null}
           </>
         )}

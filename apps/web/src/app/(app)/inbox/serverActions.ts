@@ -29,6 +29,95 @@ function getApiBaseUrl(): string {
   return process.env.X_API_BASE_URL ?? "https://api.x.com/2";
 }
 
+function getRedditUserAgent(): string {
+  return process.env.REDDIT_USER_AGENT?.trim() || "ElDoradoSBOutreachAgent/1.0 by /u/eldorado";
+}
+
+let cachedRedditToken: { token: string; expiresAtMs: number | null } | null = null;
+
+type RedditTokenResponse = {
+  access_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  scope?: string;
+};
+
+async function ensureRedditAccessToken(): Promise<string> {
+  const now = Date.now();
+  if (cachedRedditToken?.token && cachedRedditToken.expiresAtMs && cachedRedditToken.expiresAtMs > now + 30_000) {
+    return cachedRedditToken.token;
+  }
+
+  const clientId = requireEnv("REDDIT_CLIENT_ID");
+  const clientSecret = requireEnv("REDDIT_CLIENT_SECRET");
+  const username = requireEnv("REDDIT_USERNAME");
+  const password = requireEnv("REDDIT_PASSWORD");
+
+  const form = new URLSearchParams();
+  form.set("grant_type", "password");
+  form.set("username", username);
+  form.set("password", password);
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": getRedditUserAgent(),
+    },
+    body: form.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Reddit token error (${res.status}): ${text || res.statusText}`);
+  }
+
+  const json = (await res.json()) as RedditTokenResponse;
+  const token = String(json.access_token ?? "").trim();
+  if (!token) throw new Error("Missing reddit access_token");
+
+  const expiresIn = Number(json.expires_in ?? 0);
+  const expiresAtMs = Number.isFinite(expiresIn) && expiresIn > 0 ? Date.now() + expiresIn * 1000 : null;
+  cachedRedditToken = { token, expiresAtMs };
+
+  return token;
+}
+
+type RedditApiResponse = { json?: { errors?: unknown[] } };
+
+async function sendRedditDm(args: { username: string; subject: string; text: string }) {
+  const token = await ensureRedditAccessToken();
+  const form = new URLSearchParams();
+  form.set("to", args.username);
+  form.set("subject", args.subject);
+  form.set("text", args.text);
+  form.set("api_type", "json");
+
+  const res = await fetch("https://oauth.reddit.com/api/compose", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": getRedditUserAgent(),
+    },
+    body: form.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Reddit compose error (${res.status}): ${text || res.statusText}`);
+  }
+
+  const json = (await res.json()) as RedditApiResponse;
+  const errors = json.json?.errors ?? [];
+  if (Array.isArray(errors) && errors.length > 0) {
+    throw new Error(`Reddit compose error: ${JSON.stringify(errors).slice(0, 500)}`);
+  }
+}
+
 async function ensureAccessToken(): Promise<string> {
   const cred = await prisma.xCredential.findUnique({ where: { id: 1 } });
   if (!cred) throw new Error("X account not connected (missing XCredential row)");
@@ -222,6 +311,71 @@ export async function sendManualXDmAction(formData: FormData) {
   }
 
   redirect(`/inbox?t=${encodeURIComponent(threadKey)}`);
+}
+
+function parseRedditUsername(value: FormDataEntryValue | null): string {
+  const t = String(value ?? "").trim();
+  if (!t) throw new Error("missing username");
+  if (!/^[A-Za-z0-9_-]{2,30}$/.test(t)) throw new Error("invalid username");
+  return t;
+}
+
+function parseOptionalSubject(value: FormDataEntryValue | null): string {
+  const t = String(value ?? "").trim();
+  if (!t) return "Re:";
+  return t.slice(0, 100);
+}
+
+export async function sendManualRedditDmAction(formData: FormData) {
+  await requireAuth();
+
+  const username = parseRedditUsername(formData.get("username"));
+  const threadKey =
+    String(formData.get("threadKey") ?? `reddit_dm:${username}`).trim() || `reddit_dm:${username}`;
+  const subject = parseOptionalSubject(formData.get("subject"));
+  const text = parseText(formData.get("text"));
+
+  try {
+    await sendRedditDm({ username, subject, text });
+
+    await prisma.externalUser.upsert({
+      where: { platform_userId: { platform: "reddit", userId: username } },
+      create: { platform: "reddit", userId: username, handle: username, name: null },
+      update: { handle: username },
+    });
+
+    await prisma.conversationMessage.create({
+      data: {
+        platform: "reddit",
+        externalId: `reddit_manual_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        threadKey,
+        direction: "outbound",
+        userId: username,
+        text: redactMessageText(text),
+        meta: { reason: "manual:dm_send", subject } as Prisma.InputJsonValue,
+      },
+    });
+
+    redirect(`/inbox?p=reddit&t=${encodeURIComponent(threadKey)}&ok=1`);
+  } catch (err) {
+    await prisma.conversationMessage.create({
+      data: {
+        platform: "reddit",
+        externalId: `reddit_manual_error_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        threadKey,
+        direction: "outbound",
+        userId: username,
+        text: redactMessageText(text),
+        meta: {
+          reason: "manual:dm_send_error",
+          subject,
+          error: err instanceof Error ? err.message : String(err),
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    redirect(`/inbox?p=reddit&t=${encodeURIComponent(threadKey)}`);
+  }
 }
 
 export async function logConversationOutcomeAction(formData: FormData) {

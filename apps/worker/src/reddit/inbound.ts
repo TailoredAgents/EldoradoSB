@@ -110,8 +110,21 @@ export async function runRedditInbound(args: { dryRun: boolean }): Promise<Reddi
     };
   });
 
+  const authors = Array.from(new Set(messages.map((m) => String(m.author ?? "").trim()).filter(Boolean))).slice(0, 200);
+
   let inserted = 0;
   if (!args.dryRun) {
+    if (authors.length > 0) {
+      await prisma.$transaction(
+        authors.map((a) =>
+          prisma.externalUser.upsert({
+            where: { platform_userId: { platform: "reddit", userId: a } },
+            create: { platform: "reddit", userId: a, handle: a, name: null },
+            update: { handle: a },
+          }),
+        ),
+      );
+    }
     const res = await prisma.conversationMessage.createMany({ data: rows, skipDuplicates: true });
     inserted = res.count ?? 0;
   }
@@ -136,4 +149,3 @@ export async function runRedditInbound(args: { dryRun: boolean }): Promise<Reddi
 
   return { status: "processed", messagesFetched: messages.length, messagesInserted: inserted, markedRead };
 }
-

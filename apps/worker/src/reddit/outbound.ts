@@ -145,6 +145,18 @@ function buildValueComment(args: { tier: Tier; seed: number }): { text: string; 
         key: "rd:payout:value:v3",
         text: "When people say a book pays, ask: how fast, what method, and was it consistent over multiple withdrawals. The first cashout is the real test.",
       },
+      {
+        key: "rd:payout:value:v4",
+        text: "If you're worried about getting paid, look for consistency over time: same-day vs next-day cashouts, whether limits change after a win, and if support is responsive when you withdraw.",
+      },
+      {
+        key: "rd:payout:value:v5",
+        text: "One thing that helps: keep screenshots of deposits/withdrawals and test a small withdrawal early. If they drag their feet on $50, they’ll drag on $500.",
+      },
+      {
+        key: "rd:payout:value:v6",
+        text: "Best practice with small books: deposit small, win/lose, then withdraw once. If that works smoothly, then scale up.",
+      },
     ] as const;
     return pickVariant(variants, args.seed);
   }
@@ -163,6 +175,18 @@ function buildValueComment(args: { tier: Tier; seed: number }): { text: string; 
         key: "rd:picks:value:v3",
         text: "Bankroll discipline beats hot streaks. Pick a unit size and stick to it - especially on props/parlays where variance is brutal.",
       },
+      {
+        key: "rd:picks:value:v4",
+        text: "If you’re serious about picks, write down your bet size + closing line. If you’re consistently beating close, the results will follow.",
+      },
+      {
+        key: "rd:picks:value:v5",
+        text: "Parlay reminder: the book’s edge compounds per leg. A couple straights + a small parlay flyer usually beats all-in parlays.",
+      },
+      {
+        key: "rd:picks:value:v6",
+        text: "Props can be great, but don’t stack correlated legs without realizing it. Correlation feels smart until it nukes your whole card.",
+      },
     ] as const;
     return pickVariant(variants, args.seed);
   }
@@ -180,16 +204,39 @@ function buildValueComment(args: { tier: Tier; seed: number }): { text: string; 
       key: "rd:gen:value:v3",
       text: "If you're betting weekly, keep it simple: consistent unit size, shop lines, and don't let parlays become the whole strategy.",
     },
+    {
+      key: "rd:gen:value:v4",
+      text: "If you’re new to a book, the best “bonus” is trust. Test deposits/withdrawals and don’t overcommit until you know payouts are smooth.",
+    },
+    {
+      key: "rd:gen:value:v5",
+      text: "Most people lose from tilt, not bad picks. Set a daily limit, keep unit size fixed, and walk away after your cap.",
+    },
+    {
+      key: "rd:gen:value:v6",
+      text: "Worth repeating: don’t chase. If you miss a number, there’s always another slate tomorrow.",
+    },
   ] as const;
   return pickVariant(variants, args.seed);
 }
 
 function buildSoftCta(args: { tier: Tier; xHandle: string }): { text: string; key: string } {
   const code = args.tier === "payout_reviews" ? "LINK PAYOUT REDDIT" : args.tier === "picks_parlays" ? "LINK PICKS REDDIT" : "LINK GEN REDDIT";
-  return {
-    key: `rd:cta:${args.tier}:x_dm`,
-    text: `If you want our signup link + 200% match, DM @${args.xHandle} on X with "${code}".`,
-  };
+  const variants = [
+    {
+      key: `rd:cta:${args.tier}:x_dm:v1`,
+      text: `If you want our signup link + 200% match, DM @${args.xHandle} on X with "${code}".`,
+    },
+    {
+      key: `rd:cta:${args.tier}:x_dm:v2`,
+      text: `If you want the signup link + current bonus, DM @${args.xHandle} on X with "${code}".`,
+    },
+    {
+      key: `rd:cta:${args.tier}:x_dm:v3`,
+      text: `Want the link + bonus? DM @${args.xHandle} on X: "${code}".`,
+    },
+  ] as const;
+  return pickVariant(variants, seedFrom([args.tier, args.xHandle, code]));
 }
 
 function readConfig(config: unknown): { subreddits: SubredditConfig[]; xHandle: string } {
@@ -323,9 +370,9 @@ async function auditRecentOutboundComments(args: {
   });
 
   const removedRows = refreshed
-    .map((r) => (isObj(r.meta) ? r.meta : null))
-    .filter((m): m is Record<string, unknown> => Boolean(m))
-    .filter((m) => Boolean(m.removed));
+    .map((r) => (isObj(r.meta) ? (r.meta as Record<string, unknown>) : null))
+    .filter(Boolean)
+    .filter((m) => Boolean((m as Record<string, unknown>).removed)) as Array<Record<string, unknown>>;
 
   const removed7d = removedRows.length;
   const removedAtDates = removedRows.map((m) => parseIsoDate(m.removedAt)).filter((d): d is Date => Boolean(d));

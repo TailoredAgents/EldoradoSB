@@ -185,6 +185,12 @@ export default async function InboxPage({
             >
               Export JSONL
             </Link>
+            <Link
+              href={`/export/conversations?platform=${encodeURIComponent(platform)}&format=openai&onlyManual=1`}
+              className="text-xs text-white/70 hover:text-white"
+            >
+              Export Devon JSONL
+            </Link>
           </div>
         </div>
 

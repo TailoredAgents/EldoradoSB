@@ -48,6 +48,10 @@ export default async function XPage({
   const postTime5 = schedulePosts[4] ?? "21:00";
   const postTime6 = schedulePosts[5] ?? "23:30";
 
+  const followUpEnabled = settings?.followUpEnabled ?? true;
+  const followUpMinHours = settings?.followUpMinHours ?? 12;
+  const followUpMaxHours = settings?.followUpMaxHours ?? 36;
+
   return (
     <div className="space-y-4">
       <div>
@@ -160,7 +164,7 @@ export default async function XPage({
                       defaultChecked={settings.autoReplyEnabled}
                       className="h-4 w-4 accent-amber-400"
                     />
-                    <span>Auto-reply (Phase 4)</span>
+                    <span>Auto-reply (LINK/HELP only)</span>
                   </label>
                   <label className="flex items-center gap-3 text-sm">
                     <input
@@ -171,6 +175,46 @@ export default async function XPage({
                     />
                     <span>Outbound engagement (Phase 5)</span>
                   </label>
+                </div>
+
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-white/60">Follow-up (unclicked link)</div>
+                  <div className="mt-2 text-xs text-white/50">
+                    Send 1 gentle follow-up if the tracked signup link was sent but not clicked.
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <label className="flex items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        name="followUpEnabled"
+                        defaultChecked={followUpEnabled}
+                        className="h-4 w-4 accent-amber-400"
+                      />
+                      <span>Enable follow-ups</span>
+                    </label>
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">Min age (hours)</div>
+                      <input
+                        name="followUpMinHours"
+                        type="number"
+                        min={1}
+                        max={168}
+                        defaultValue={followUpMinHours}
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                      />
+                    </label>
+                    <label className="block">
+                      <div className="mb-1 text-xs text-white/60">Max age (hours)</div>
+                      <input
+                        name="followUpMaxHours"
+                        type="number"
+                        min={2}
+                        max={336}
+                        defaultValue={followUpMaxHours}
+                        className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 <div className="grid gap-3 rounded-lg border border-white/10 bg-black/40 p-3 md:grid-cols-4">

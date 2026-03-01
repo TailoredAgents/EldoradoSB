@@ -151,6 +151,12 @@ function parseOptionalInt(value: FormDataEntryValue | null): number | null {
   return num;
 }
 
+function parseIntInRange(value: FormDataEntryValue | null, min: number, max: number): number {
+  const n = parseIntStrict(value);
+  if (n < min || n > max) throw new Error("invalid range");
+  return n;
+}
+
 function parseOptionalToken(value: FormDataEntryValue | null): string | null {
   const str = String(value ?? "").trim();
   if (!str) return null;
@@ -175,6 +181,7 @@ export async function updateXAccountSettingsAction(formData: FormData) {
     const enabled = formData.get("enabled") === "on";
     const autoPostEnabled = formData.get("autoPostEnabled") === "on";
     const autoReplyEnabled = formData.get("autoReplyEnabled") === "on";
+    const followUpEnabled = formData.get("followUpEnabled") === "on";
     const outboundEnabled = formData.get("outboundEnabled") === "on";
 
     const publicBaseUrlRaw = String(formData.get("publicBaseUrl") ?? "").trim() || null;
@@ -190,6 +197,10 @@ export async function updateXAccountSettingsAction(formData: FormData) {
     const maxOutboundRepliesPerDay = parseIntStrict(formData.get("maxOutboundRepliesPerDay"));
     const maxOutboundRepliesPerRun = parseIntStrict(formData.get("maxOutboundRepliesPerRun"));
     const maxPostsConsumedPerUtcDay = parseOptionalInt(formData.get("maxPostsConsumedPerUtcDay"));
+
+    const followUpMinHours = parseIntInRange(formData.get("followUpMinHours"), 1, 168);
+    const followUpMaxHours = parseIntInRange(formData.get("followUpMaxHours"), 2, 336);
+    if (followUpMaxHours <= followUpMinHours) throw new Error("invalid follow-up window");
 
     if (
       maxPostsPerDay < 0 ||
@@ -220,6 +231,9 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         enabled,
         autoPostEnabled,
         autoReplyEnabled,
+        followUpEnabled,
+        followUpMinHours,
+        followUpMaxHours,
         outboundEnabled,
         publicBaseUrl,
         linkTokenDefault,
@@ -239,6 +253,9 @@ export async function updateXAccountSettingsAction(formData: FormData) {
         enabled,
         autoPostEnabled,
         autoReplyEnabled,
+        followUpEnabled,
+        followUpMinHours,
+        followUpMaxHours,
         outboundEnabled,
         publicBaseUrl,
         linkTokenDefault,

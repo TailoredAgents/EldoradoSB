@@ -427,6 +427,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       maxAutoRepliesPerDay: 60,
       maxOutboundRepliesPerDay: 10,
       maxOutboundRepliesPerRun: 10,
+      followUpEnabled: true,
+      followUpMinHours: 12,
+      followUpMaxHours: 36,
       schedule: { posts: ["10:00", "12:30", "15:30", "18:30", "21:00", "23:30"] },
       disclaimerText: "21+ | Terms apply | Gamble responsibly",
     },
@@ -441,6 +444,9 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
       linkTokenPayout: true,
       linkTokenPicks: true,
       linkTokenGen: true,
+      followUpEnabled: true,
+      followUpMinHours: true,
+      followUpMaxHours: true,
     },
   });
 
@@ -978,7 +984,7 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     }
   }
 
-  // Follow-up nurture: if a user received a tracked link DM 12–36 hours ago and hasn't clicked, send one gentle reminder.
+  // Follow-up nurture: if a user received a tracked link DM and hasn't clicked, send one gentle reminder.
   // Guardrails:
   // - counts toward maxAutoRepliesPerDay (reason contains "auto_reply")
   // - max 3 follow-ups per run
@@ -987,7 +993,12 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
     const remainingActions = Math.max(0, remaining - (repliesSent + dmsSent));
     const maxDailyFollowUps = Math.min(30, Math.floor(settings.maxAutoRepliesPerDay * 0.25));
 
-    if (!args.dryRun && remainingActions > 0 && maxDailyFollowUps > 0 && settings.publicBaseUrl) {
+    const minH = Number(settings.followUpMinHours ?? 12);
+    const maxH = Number(settings.followUpMaxHours ?? 36);
+    const minHours = Number.isFinite(minH) ? Math.max(1, Math.min(Math.floor(minH), 168)) : 12;
+    const maxHours = Number.isFinite(maxH) ? Math.max(minHours + 1, Math.min(Math.floor(maxH), 336)) : 36;
+
+    if (!args.dryRun && remainingActions > 0 && maxDailyFollowUps > 0 && settings.publicBaseUrl && settings.followUpEnabled) {
       const followUpsAlreadyToday = await prisma.xActionLog.count({
         where: {
           actionType: XActionType.dm,
@@ -1001,8 +1012,8 @@ export async function runInboundAutoReply(args: { dryRun: boolean; readBudget: n
 
       if (maxThisRun > 0) {
         const nowMs = Date.now();
-        const minAgeMs = 12 * 60 * 60 * 1000;
-        const maxAgeMs = 36 * 60 * 60 * 1000;
+        const minAgeMs = minHours * 60 * 60 * 1000;
+        const maxAgeMs = maxHours * 60 * 60 * 1000;
         const since = new Date(nowMs - maxAgeMs);
 
         const recentLinkDms = await prisma.xActionLog.findMany({

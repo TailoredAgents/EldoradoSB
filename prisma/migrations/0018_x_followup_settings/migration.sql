@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "public"."XAccountSettings"
+ADD COLUMN "followUpEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "followUpMinHours" INTEGER NOT NULL DEFAULT 12,
+ADD COLUMN "followUpMaxHours" INTEGER NOT NULL DEFAULT 36;
+

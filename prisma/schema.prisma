@@ -337,6 +337,11 @@ model XAccountSettings {
   maxOutboundRepliesPerDay Int @default(10)
   maxOutboundRepliesPerRun Int @default(10)
 
+  // One gentle follow-up if a tracked LINK DM wasn't clicked (Phase C).
+  followUpEnabled  Boolean @default(true)
+  followUpMinHours Int     @default(12)
+  followUpMaxHours Int     @default(36)
+
   // Pay-per-use guardrail (UTC day): if set, worker will throttle reads when X "posts consumed" reaches this cap.
   maxPostsConsumedPerUtcDay Int?
 

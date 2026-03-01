@@ -35,6 +35,9 @@ export async function updateRedditSettingsAction(formData: FormData) {
     const maxCommentsPerDay = parseIntStrict(formData.get("maxCommentsPerDay"));
     const maxCommentsPerRun = parseIntStrict(formData.get("maxCommentsPerRun"));
     const ctaPercent = parseIntStrict(formData.get("ctaPercent"));
+    const autoBackoffEnabled = formData.get("autoBackoffEnabled") === "on";
+    const maxErrorsPerDay = parseIntStrict(formData.get("maxErrorsPerDay"));
+    const maxRemovalsPerDay = parseIntStrict(formData.get("maxRemovalsPerDay"));
 
     if (
       maxCommentsPerDay < 0 ||
@@ -42,7 +45,11 @@ export async function updateRedditSettingsAction(formData: FormData) {
       maxCommentsPerRun < 0 ||
       maxCommentsPerRun > 50 ||
       ctaPercent < 0 ||
-      ctaPercent > 100
+      ctaPercent > 100 ||
+      maxErrorsPerDay < 0 ||
+      maxErrorsPerDay > 100 ||
+      maxRemovalsPerDay < 0 ||
+      maxRemovalsPerDay > 100
     ) {
       throw new Error("invalid caps");
     }
@@ -65,6 +72,9 @@ export async function updateRedditSettingsAction(formData: FormData) {
         maxCommentsPerDay,
         maxCommentsPerRun,
         ctaPercent,
+        autoBackoffEnabled,
+        maxErrorsPerDay,
+        maxRemovalsPerDay,
         config,
       },
       create: {
@@ -75,6 +85,9 @@ export async function updateRedditSettingsAction(formData: FormData) {
         maxCommentsPerDay,
         maxCommentsPerRun,
         ctaPercent,
+        autoBackoffEnabled,
+        maxErrorsPerDay,
+        maxRemovalsPerDay,
         config,
       },
     });
@@ -83,4 +96,14 @@ export async function updateRedditSettingsAction(formData: FormData) {
   } catch {
     redirect("/reddit?error=1");
   }
+}
+
+export async function clearRedditBackoffAction() {
+  await requireAuth();
+  await prisma.redditAccountSettings.upsert({
+    where: { id: 1 },
+    update: { backoffUntil: null },
+    create: { id: 1, backoffUntil: null },
+  });
+  redirect("/reddit?ok=1");
 }

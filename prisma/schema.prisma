@@ -500,6 +500,12 @@ model RedditAccountSettings {
   // Percent of comments that include a soft CTA (only for subreddits allowlisted for CTA).
   ctaPercent Int @default(15)
 
+  // Guardrails: auto-pause outbound for the day when removals/errors spike.
+  autoBackoffEnabled Boolean @default(true)
+  maxErrorsPerDay    Int     @default(3)
+  maxRemovalsPerDay  Int     @default(2)
+  backoffUntil       DateTime?
+
   // JSON config:
   // { "subreddits": [{ "name": "sportsbook", "allowCta": false }, ...], "xHandle": "EldoradoSB" }
   config Json?

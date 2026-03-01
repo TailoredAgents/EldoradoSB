@@ -297,15 +297,20 @@ export default async function ReportsPage() {
   const redditByTier7 = new Map<string, number>();
   let redditCta30 = 0;
   let redditCta7 = 0;
+  let redditRemoved30 = 0;
+  let redditRemoved7 = 0;
   for (const r of redditOutbound30) {
     const tier = metaString(r.meta, "tier") ?? "unknown";
     redditByTier30.set(tier, (redditByTier30.get(tier) ?? 0) + 1);
     const usedCta = metaBoolean(r.meta, "usedCta") ?? false;
     if (usedCta) redditCta30 += 1;
+    const removed = metaBoolean(r.meta, "removed") ?? false;
+    if (removed) redditRemoved30 += 1;
 
     if (r.createdAt >= since7) {
       redditByTier7.set(tier, (redditByTier7.get(tier) ?? 0) + 1);
       if (usedCta) redditCta7 += 1;
+      if (removed) redditRemoved7 += 1;
     }
   }
 
@@ -703,6 +708,9 @@ export default async function ReportsPage() {
             <div className="mt-1 text-xs text-white/60">
               CTA: <span className="tabular-nums">{redditCta7}</span>
             </div>
+            <div className="mt-1 text-xs text-white/60">
+              Removed: <span className="tabular-nums">{redditRemoved7}</span>
+            </div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/40 p-3">
             <div className="text-xs text-white/60">Comments (30d)</div>
@@ -711,6 +719,9 @@ export default async function ReportsPage() {
             </div>
             <div className="mt-1 text-xs text-white/60">
               CTA: <span className="tabular-nums">{redditCta30}</span>
+            </div>
+            <div className="mt-1 text-xs text-white/60">
+              Removed: <span className="tabular-nums">{redditRemoved30}</span>
             </div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/40 p-3 md:col-span-2">

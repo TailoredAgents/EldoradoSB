@@ -57,6 +57,10 @@ function getEnv(name: string): string | null {
   return t ? t : null;
 }
 
+function isObj(x: unknown): x is Record<string, unknown> {
+  return Boolean(x) && typeof x === "object";
+}
+
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -211,7 +215,130 @@ function readConfig(config: unknown): { subreddits: SubredditConfig[]; xHandle: 
 
 export type RedditOutboundResult =
   | { status: "skipped"; reason: string }
-  | { status: "processed"; commentsSent: number; candidatesScanned: number };
+  | {
+      status: "processed";
+      commentsSent: number;
+      candidatesScanned: number;
+      ctaUsed: number;
+      audited: number;
+      removed7d: number;
+      removed24h: number;
+      errors24h: number;
+      effectiveCtaPercent: number;
+    };
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function shouldAudit(meta: unknown, now: Date): boolean {
+  if (!isObj(meta)) return true;
+  const last = parseIsoDate(meta.auditCheckedAt);
+  if (!last) return true;
+  return now.getTime() - last.getTime() > 12 * 60 * 60 * 1000;
+}
+
+async function auditRecentOutboundComments(args: {
+  reddit: RedditClient;
+  now: Date;
+  take: number;
+}): Promise<{ audited: number; removed7d: number; removed24h: number; recent: Array<{ removedAt: Date | null }> }> {
+  const since7 = new Date(args.now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const recent = await prisma.conversationMessage.findMany({
+    where: { platform: "reddit", direction: "outbound", createdAt: { gte: since7 } },
+    orderBy: { createdAt: "desc" },
+    take: Math.max(25, args.take * 3),
+    select: { id: true, externalId: true, meta: true },
+  });
+
+  const auditTargets = recent
+    .filter((m) => String(m.externalId ?? "").startsWith("t1_"))
+    .filter((m) => shouldAudit(m.meta, args.now))
+    .slice(0, args.take);
+
+  let audited = 0;
+
+  for (const m of auditTargets) {
+    try {
+      const res = await args.reddit.getJson<{ data?: { children?: Array<{ kind: string; data: Record<string, unknown> }> } }>(
+        "/api/info",
+        { id: m.externalId },
+      );
+      const child = res.data?.data?.children?.[0]?.data ?? null;
+      const removedByCategory = child && typeof child.removed_by_category === "string" ? child.removed_by_category : null;
+      const bannedBy = child && typeof child.banned_by === "string" ? child.banned_by : null;
+      const body = child && typeof child.body === "string" ? child.body : null;
+      const removedFlag = Boolean(
+        removedByCategory ||
+          bannedBy ||
+          body === "[removed]" ||
+          body === "[deleted]" ||
+          (child && typeof child.removed === "boolean" ? child.removed : false),
+      );
+
+      const meta0 = isObj(m.meta) ? m.meta : {};
+      const next: Record<string, unknown> = {
+        ...meta0,
+        auditCheckedAt: args.now.toISOString(),
+        removed: removedFlag,
+        removedByCategory,
+        bannedBy,
+      };
+
+      if (removedFlag && !parseIsoDate(meta0.removedAt)) next.removedAt = args.now.toISOString();
+      if (!removedFlag) {
+        // Keep removedAt if it was already marked removed (so reporting stays stable).
+      }
+
+      await prisma.conversationMessage.update({
+        where: { id: m.id },
+        data: { meta: next as Prisma.InputJsonValue },
+      });
+
+      audited += 1;
+    } catch (err) {
+      const meta0 = isObj(m.meta) ? m.meta : {};
+      await prisma.conversationMessage.update({
+        where: { id: m.id },
+        data: {
+          meta: {
+            ...meta0,
+            auditCheckedAt: args.now.toISOString(),
+            auditError: String((err as any)?.message ?? err ?? "unknown").slice(0, 500),
+          } as Prisma.InputJsonValue,
+        },
+      });
+      audited += 1;
+    }
+  }
+
+  const refreshed = await prisma.conversationMessage.findMany({
+    where: { platform: "reddit", direction: "outbound", createdAt: { gte: since7 } },
+    orderBy: { createdAt: "desc" },
+    take: 1000,
+    select: { meta: true },
+  });
+
+  const removedRows = refreshed
+    .map((r) => (isObj(r.meta) ? r.meta : null))
+    .filter((m): m is Record<string, unknown> => Boolean(m))
+    .filter((m) => Boolean(m.removed));
+
+  const removed7d = removedRows.length;
+  const removedAtDates = removedRows.map((m) => parseIsoDate(m.removedAt)).filter((d): d is Date => Boolean(d));
+  const since24 = new Date(args.now.getTime() - 24 * 60 * 60 * 1000);
+  const removed24h = removedAtDates.filter((d) => d >= since24).length;
+
+  return {
+    audited,
+    removed7d,
+    removed24h,
+    recent: removedAtDates.map((d) => ({ removedAt: d ?? null })),
+  };
+}
 
 export async function runRedditOutbound(args: { dryRun: boolean }): Promise<RedditOutboundResult> {
   const settings =
@@ -224,12 +351,29 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
         maxCommentsPerDay: 8,
         maxCommentsPerRun: 2,
         ctaPercent: 15,
+        autoBackoffEnabled: true,
+        maxErrorsPerDay: 3,
+        maxRemovalsPerDay: 2,
         config: { subreddits: [], xHandle: "EldoradoSB" } as Prisma.InputJsonValue,
       },
     }));
 
   if (!settings.enabled) return { status: "skipped", reason: "reddit_disabled" };
   if (!settings.outboundEnabled) return { status: "skipped", reason: "reddit_outbound_disabled" };
+
+  const tz = getAppTimeZone();
+  const now = new Date();
+  const dayStart = startOfDayApp(now, tz);
+  const dayEnd = startOfNextDayApp(now, tz);
+
+  if (settings.backoffUntil && settings.backoffUntil > now) {
+    return { status: "skipped", reason: "reddit_backoff" };
+  }
+
+  if (settings.backoffUntil && settings.backoffUntil <= now) {
+    // Best-effort cleanup so the UI stays tidy.
+    await prisma.redditAccountSettings.update({ where: { id: 1 }, data: { backoffUntil: null } }).catch(() => null);
+  }
 
   // Require reddit creds only when enabled.
   const clientId = getEnv("REDDIT_CLIENT_ID");
@@ -246,11 +390,6 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
 
   const cfg = readConfig(settings.config);
   if (cfg.subreddits.length === 0) return { status: "skipped", reason: "reddit_no_subreddits" };
-
-  const tz = getAppTimeZone();
-  const now = new Date();
-  const dayStart = startOfDayApp(now, tz);
-  const dayEnd = startOfNextDayApp(now, tz);
 
   const sentToday = await prisma.conversationMessage.count({
     where: { platform: "reddit", direction: "outbound", createdAt: { gte: dayStart, lt: dayEnd } },
@@ -270,6 +409,27 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
     minDelayMs: 1600,
     maxRetries: 3,
   });
+
+  const audit = await auditRecentOutboundComments({ reddit, now, take: 20 });
+
+  const errors24h = await prisma.handledItem.count({
+    where: {
+      platform: "reddit",
+      status: "error",
+      updatedAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+    },
+  });
+
+  if (
+    settings.autoBackoffEnabled &&
+    ((settings.maxErrorsPerDay > 0 && errors24h >= settings.maxErrorsPerDay) ||
+      (settings.maxRemovalsPerDay > 0 && audit.removed24h >= settings.maxRemovalsPerDay))
+  ) {
+    await prisma.redditAccountSettings.update({ where: { id: 1 }, data: { backoffUntil: dayEnd } });
+    return { status: "skipped", reason: "reddit_guardrail_backoff" };
+  }
+
+  const effectiveCtaPercent = audit.removed7d > 0 ? Math.min(settings.ctaPercent, 5) : settings.ctaPercent;
 
   const maxAgeSeconds = 24 * 60 * 60;
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -341,6 +501,7 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
   const unique = Array.from(uniqueByThing.values()).slice(0, 200);
 
   let commentsSent = 0;
+  let ctaUsed = 0;
 
   for (const c of unique) {
     if (commentsSent >= willDo) break;
@@ -354,10 +515,11 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
     if (!reserved) continue;
 
     const seed = seedFrom([c.thingId, c.subreddit, String(dayStart.toISOString())]);
-    const shouldCta = c.allowCta && settings.ctaPercent > 0 && (seed % 100) < settings.ctaPercent;
+    const shouldCta = c.allowCta && effectiveCtaPercent > 0 && (seed % 100) < effectiveCtaPercent;
 
     const value = buildValueComment({ tier: c.tier, seed });
     const cta = shouldCta ? buildSoftCta({ tier: c.tier, xHandle: cfg.xHandle }) : null;
+    if (cta) ctaUsed += 1;
 
     const commentText = clampText(`${value.text}${cta ? `\n\n${cta.text}` : ""}`, 9000);
 
@@ -434,5 +596,15 @@ export async function runRedditOutbound(args: { dryRun: boolean }): Promise<Redd
     }
   }
 
-  return { status: "processed", commentsSent, candidatesScanned: unique.length };
+  return {
+    status: "processed",
+    commentsSent,
+    candidatesScanned: unique.length,
+    ctaUsed,
+    audited: audit.audited,
+    removed7d: audit.removed7d,
+    removed24h: audit.removed24h,
+    errors24h,
+    effectiveCtaPercent,
+  };
 }

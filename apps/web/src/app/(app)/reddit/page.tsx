@@ -1,6 +1,6 @@
 import { prisma } from "@el-dorado/db";
 import { getAppTimeZone, startOfDayApp, startOfNextDayApp } from "@/lib/time";
-import { updateRedditSettingsAction } from "./serverActions";
+import { clearRedditBackoffAction, updateRedditSettingsAction } from "./serverActions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,17 @@ function readConfig(config: unknown): { xHandle: string; subreddits: Array<{ nam
   return { xHandle: xHandle || "EldoradoSB", subreddits };
 }
 
+function isObj(x: unknown): x is Record<string, unknown> {
+  return Boolean(x) && typeof x === "object";
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export default async function RedditPage({
   searchParams,
 }: {
@@ -42,10 +53,32 @@ export default async function RedditPage({
   const now = new Date();
   const dayStart = startOfDayApp(now, tz);
   const dayEnd = startOfNextDayApp(now, tz);
+  const since24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const since7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const sentToday = await prisma.conversationMessage.count({
     where: { platform: "reddit", direction: "outbound", createdAt: { gte: dayStart, lt: dayEnd } },
   });
+
+  const errors24h = await prisma.handledItem.count({
+    where: { platform: "reddit", status: "error", updatedAt: { gte: since24 } },
+  });
+
+  const outbound7 = await prisma.conversationMessage.findMany({
+    where: { platform: "reddit", direction: "outbound", createdAt: { gte: since7 } },
+    orderBy: { createdAt: "desc" },
+    take: 1000,
+    select: { meta: true },
+  });
+  const removedRows = outbound7
+    .map((r) => (isObj(r.meta) ? (r.meta as Record<string, unknown>) : null))
+    .filter(Boolean)
+    .filter((m) => Boolean((m as Record<string, unknown>).removed)) as Array<Record<string, unknown>>;
+  const removed7d = removedRows.length;
+  const removedAtDates = removedRows.map((m) => parseIsoDate(m.removedAt)).filter((d): d is Date => Boolean(d));
+  const removed24h = removedAtDates.filter((d) => d >= since24).length;
+
+  const isBackoff = Boolean(settings.backoffUntil && settings.backoffUntil > now);
 
   const recent = await prisma.conversationMessage.findMany({
     where: { platform: "reddit", direction: "outbound" },
@@ -78,6 +111,25 @@ export default async function RedditPage({
         <div className="text-xs uppercase tracking-wide text-white/60">Today</div>
         <div className="mt-2 text-sm text-white/80">
           Comments sent today (ET): <span className="font-semibold text-white">{sentToday}</span>
+        </div>
+        <div className="mt-2 text-sm text-white/80">
+          Health (24h):{" "}
+          <span className="tabular-nums">{errors24h}</span> errors,{" "}
+          <span className="tabular-nums">{removed24h}</span> removals
+          {removed7d > 0 ? (
+            <span className="text-white/60"> (removed 7d: {removed7d})</span>
+          ) : null}
+        </div>
+        {isBackoff ? (
+          <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            Outbound paused until <span className="font-mono">{settings.backoffUntil?.toISOString()}</span> (UTC).
+            <form action={clearRedditBackoffAction} className="mt-2">
+              <button className="btn btn-secondary px-3">Clear pause</button>
+            </form>
+          </div>
+        ) : null}
+        <div className="mt-2 text-xs text-white/50">
+          Removal detection updates when the worker runs and audits recent comments.
         </div>
       </div>
 
@@ -152,6 +204,45 @@ export default async function RedditPage({
                 className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
               />
             </label>
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="text-xs uppercase tracking-wide text-white/60">Guardrails</div>
+              <label className="mt-3 flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="autoBackoffEnabled"
+                  defaultChecked={settings.autoBackoffEnabled}
+                  className="h-4 w-4 accent-amber-400"
+                />
+                <span>Auto-pause outbound on removals/errors</span>
+              </label>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Max errors/24h</div>
+                  <input
+                    name="maxErrorsPerDay"
+                    type="number"
+                    min={0}
+                    max={100}
+                    defaultValue={settings.maxErrorsPerDay}
+                    className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <div className="mb-1 text-xs text-white/60">Max removals/24h</div>
+                  <input
+                    name="maxRemovalsPerDay"
+                    type="number"
+                    min={0}
+                    max={100}
+                    defaultValue={settings.maxRemovalsPerDay}
+                    className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/50"
+                  />
+                </label>
+              </div>
+              <div className="mt-2 text-xs text-white/50">
+                If the worker sees too many removals/errors in a 24h window, it pauses outbound until tomorrow.
+              </div>
+            </div>
           </div>
 
           <div className="surface p-4">
